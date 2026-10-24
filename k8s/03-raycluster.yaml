@@ -1,0 +1,132 @@
+# JM Comment: Production RayCluster CRD with Head (On-Demand) and Worker (Spot) Separation
+apiVersion: ray.io/v1
+kind: RayCluster
+metadata:
+  name: corporate-ai-cluster
+  namespace: kuberay
+  labels:
+    app.kubernetes.io/name: kuberay
+    ray.io/cluster: corporate-ai-cluster
+spec:
+  rayVersion: '2.35.0'
+  # -----------------------------------------------------------------------
+  # Head Node Specification (Pinned to On-Demand Node Group)
+  # -----------------------------------------------------------------------
+  headGroupSpec:
+    serviceAccountName: ray-head-sa
+    rayStartParams:
+      dashboard-host: '0.0.0.0'
+      metrics-export-port: '44217'
+      num-cpus: '0' # Head node is dedicated to coordination; does not execute heavy user tasks
+      block: 'true'
+    template:
+      metadata:
+        labels:
+          ray.io/node-type: head
+        annotations:
+          prometheus.io/scrape: 'true'
+          prometheus.io/port: '44217'
+          prometheus.io/path: '/metrics'
+      spec:
+        nodeSelector:
+          ray-node-type: head
+          workload: system
+        containers:
+          - name: ray-head
+            image: rayproject/ray:2.35.0-py310
+            imagePullPolicy: IfNotPresent
+            resources:
+              limits:
+                cpu: '2'
+                memory: '4Gi'
+              requests:
+                cpu: '1'
+                memory: '2Gi'
+            volumeMounts:
+              - mountPath: /dev/shm
+                name: dshm
+            ports:
+              - containerPort: 6379
+                name: gcs
+              - containerPort: 8265
+                name: dashboard
+              - containerPort: 10001
+                name: client
+              - containerPort: 44217
+                name: metrics
+            env:
+              - name: RAY_PROMETHEUS_HOST
+                value: "http://prometheus-k8s.monitoring.svc:9090"
+        volumes:
+          # JM Comment: Crucial for high-throughput Ray Data shared memory /dev/shm
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: 2Gi
+
+  # -----------------------------------------------------------------------
+  # Worker Node Group Specification (Pinned to Auto-scaling Spot Pool)
+  # -----------------------------------------------------------------------
+  workerGroupSpecs:
+    - groupName: spot-worker-group
+      replicas: 2
+      minReplicas: 1
+      maxReplicas: 10
+      serviceAccountName: ray-worker-sa
+      rayStartParams:
+        # JM Comment: Declares custom resource 'actor_node: 1' for EntityResolver scheduling
+        resources: '"{\"actor_node\": 1}"'
+        object-store-memory: '3221225472' # 3 GiB Object Store per worker
+        block: 'true'
+      template:
+        metadata:
+          labels:
+            ray.io/node-type: worker
+            lifecycle: Ec2Spot
+        spec:
+          # Pin to Spot worker node group
+          nodeSelector:
+            ray-node-type: worker
+          tolerations:
+            - key: "dedicated"
+              operator: "Equal"
+              value: "ray-worker"
+              effect: "NoSchedule"
+          containers:
+            - name: ray-worker
+              image: rayproject/ray:2.35.0-py310
+              imagePullPolicy: IfNotPresent
+              lifecycle:
+                # JM Comment: Graceful Spot interruption handling: cleanly evicts tasks and flushes objects
+                preStop:
+                  exec:
+                    command: ["/bin/sh", "-c", "ray stop --force"]
+              resources:
+                limits:
+                  cpu: '2'
+                  memory: '8Gi'
+                requests:
+                  cpu: '1500m'
+                  memory: '6Gi'
+              volumeMounts:
+                - mountPath: /dev/shm
+                  name: dshm
+                - mountPath: /tmp/ray
+                  name: ray-spill-storage
+              env:
+                - name: LLM_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: ray-llm-secret
+                      key: LLM_API_KEY
+                - name: ICEBERG_CATALOG_TYPE
+                  value: "glue"
+                - name: ICEBERG_S3_BUCKET
+                  value: "distributed-ai-lake"
+          volumes:
+            - name: dshm
+              emptyDir:
+                medium: Memory
+                sizeLimit: 4Gi
+            - name: ray-spill-storage
+              emptyDir: {}

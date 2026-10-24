@@ -1,0 +1,30 @@
+# JM Comment: Secure Ingress with Authentication Proxy for Ray Dashboard Exposure
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ray-dashboard-ingress
+  namespace: kuberay
+  annotations:
+    # JM Comment: AWS ALB or Nginx Ingress Controller with SSL termination
+    kubernetes.io/ingress.class: "alb"
+    alb.ingress.kubernetes.io/scheme: "internal" # Zero-Trust: internal VPN/corp access only
+    alb.ingress.kubernetes.io/target-type: "ip"
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:us-east-1:123456789012:certificate/ray-cert"
+    
+    # Secure OIDC / Okta / Cognito authentication at the ALB layer:
+    alb.ingress.kubernetes.io/auth-type: "cognito"
+    alb.ingress.kubernetes.io/auth-idp-cognito: '{"UserPoolArn":"arn:aws:cognito-idp:us-east-1:123456789012:userpool/ray-users","UserPoolClientId":"client123","UserPoolDomain":"auth.company.internal"}'
+    alb.ingress.kubernetes.io/auth-on-unauthenticated-request: "authenticate"
+spec:
+  rules:
+    - host: ray-dashboard.corp.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: corporate-ai-cluster-head-svc
+                port:
+                  number: 8265

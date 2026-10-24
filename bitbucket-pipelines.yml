@@ -1,0 +1,91 @@
+# JM Comment: Bitbucket Pipelines CI/CD for Distributed AI Foundation Ray Architecture
+image: atlassian/default-image:4
+
+definitions:
+  services:
+    docker:
+      memory: 3072
+
+  steps:
+    # ---------------------------------------------------------------------
+    # Step: Terraform Plan (Runs on Pull Requests)
+    # ---------------------------------------------------------------------
+    - step: &terraform-plan
+        name: "Terraform Lint, Validate & Plan"
+        image: hashicorp/terraform:1.9.4
+        script:
+          - cd terraform/environments/prod
+          - terraform fmt -check -recursive ../..
+          - terraform init -backend=false
+          - terraform validate
+          - echo "Executing dry-run plan for infrastructure changes..."
+          # In live CI, inject AWS_ACCESS_KEY_ID & AWS_SECRET_ACCESS_KEY via Bitbucket Repo Variables:
+          # - terraform plan -no-color
+
+    # ---------------------------------------------------------------------
+    # Step: Unit Tests & Code Quality Gate
+    # ---------------------------------------------------------------------
+    - step: &unit-tests
+        name: "Pipeline Component & Logic Tests"
+        image: python:3.10-slim
+        caches:
+          - pip
+        script:
+          - python -m pip install --upgrade pip
+          - pip install pytest pandas numpy
+          - echo "Validating dataset generators and pipeline functions..."
+          - python scripts/generate_datasets.py
+          - python tests/test_ray_components.py
+
+    # ---------------------------------------------------------------------
+    # Step: Build and Push Docker Container Image
+    # ---------------------------------------------------------------------
+    - step: &build-and-push-image
+        name: "Build and Push Docker Image"
+        services:
+          - docker
+        script:
+          - echo "Logging into AWS ECR or Container Registry..."
+          - export IMAGE_NAME="123456789012.dkr.ecr.us-east-1.amazonaws.com/distributed-ai-ray"
+          - export IMAGE_TAG="${BITBUCKET_COMMIT:0:8}"
+          # - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $IMAGE_NAME
+          - echo "Building production container image with tag: $IMAGE_TAG"
+          - docker build -t $IMAGE_NAME:$IMAGE_TAG -t $IMAGE_NAME:latest .
+          - echo "Simulated Docker Push to Registry: docker push $IMAGE_NAME:$IMAGE_TAG"
+          # - docker push $IMAGE_NAME:$IMAGE_TAG
+          # - docker push $IMAGE_NAME:latest
+
+    # ---------------------------------------------------------------------
+    # Step: Trigger RayJob CRD on Kubernetes Cluster
+    # ---------------------------------------------------------------------
+    - step: &trigger-rayjob
+        name: "Trigger RayJob CRD on EKS Cluster"
+        image: amazon/aws-cli:2.15.15
+        script:
+          - echo "Installing kubectl..."
+          - curl -LO "https://dl.k8s.io/release/v1.30.0/bin/linux/amd64/kubectl"
+          - chmod +x kubectl && mv kubectl /usr/local/bin/
+          - echo "Updating Kubeconfig for EKS Cluster..."
+          # - aws eks update-kubeconfig --region us-east-1 --name distributed-ai-eks
+          - export IMAGE_TAG="${BITBUCKET_COMMIT:0:8}"
+          - echo "Deploying / Updating RayJob custom resource with new image tag: $IMAGE_TAG"
+          - sed -i "s|latest|$IMAGE_TAG|g" k8s/04-rayjob.yaml
+          - echo "Executing: kubectl apply -f k8s/04-rayjob.yaml"
+          # - kubectl apply -f k8s/04-rayjob.yaml
+          - echo "Watching RayJob status until completion..."
+          # - kubectl wait --for=condition=Complete rayjob/corporate-data-pipeline-job -n kuberay --timeout=1200s
+
+pipelines:
+  # Pull Request Pipeline: validates Terraform and executes tests
+  pull-requests:
+    '**':
+      - step: *terraform-plan
+      - step: *unit-tests
+
+  # Main Branch Merge Pipeline: builds image and triggers RayJob
+  branches:
+    main:
+      - step: *terraform-plan
+      - step: *unit-tests
+      - step: *build-and-push-image
+      - step: *trigger-rayjob

@@ -1,0 +1,9 @@
+# JM Comment: Namespace definition for KubeRay cluster and workloads
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kuberay
+  labels:
+    name: kuberay
+    environment: prod
+    app.kubernetes.io/managed-by: terraform

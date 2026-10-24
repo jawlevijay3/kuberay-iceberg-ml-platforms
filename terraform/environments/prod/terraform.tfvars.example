@@ -1,0 +1,6 @@
+# JM Comment: Example terraform variables for Production Ray Deployment
+aws_region   = "us-east-1"
+environment  = "prod"
+cluster_name = "distributed-ai-eks"
+vpc_cidr     = "10.0.0.0/16"
+azs          = ["us-east-1a", "us-east-1b", "us-east-1c"]

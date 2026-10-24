@@ -1,0 +1,47 @@
+# JM Comment: GitHub Actions CI/CD Pipeline (Alternative to Bitbucket)
+name: Distributed AI Foundation CI/CD
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  terraform-plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.4
+
+      - name: Terraform Lint & Validate
+        run: |
+          cd terraform/environments/prod
+          terraform fmt -check -recursive ../..
+          terraform init -backend=false
+          terraform validate
+
+  test-and-build:
+    name: Build & Trigger RayJob
+    needs: [terraform-plan]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Build Docker Image
+        run: |
+          docker build -t distributed-ai-ray:${{ github.sha }} -t distributed-ai-ray:latest .
+
+      - name: Apply RayJob Custom Resource
+        run: |
+          echo "Simulated RayJob CRD execution on EKS cluster"
+          sed -i "s|latest|${{ github.sha }}|g" k8s/04-rayjob.yaml
+          cat k8s/04-rayjob.yaml | head -n 30

@@ -1,0 +1,50 @@
+# JM Comment: Prometheus ServiceMonitor and Alerting Rules for Ray Metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ray-cluster-monitor
+  namespace: kuberay
+  labels:
+    release: prometheus
+    app.kubernetes.io/part-of: ray-monitoring
+spec:
+  selector:
+    matchLabels:
+      ray.io/node-type: head
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+---
+# JM Comment: Prometheus Alerting Rules for Spot Worker Failures and Object Store Pressure
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ray-operational-alerts
+  namespace: kuberay
+  labels:
+    role: alert-rules
+spec:
+  groups:
+    - name: ray.rules
+      rules:
+        # Alert if Object Store is > 85% full (risk of spilling or OOM)
+        - alert: RayObjectStoreHighUsage
+          expr: (ray_object_store_used_memory / ray_object_store_available_memory) > 0.85
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Ray Object Store Memory Pressure"
+            description: "Ray Object Store memory usage exceeded 85% on node {{ $labels.instance }}."
+
+        # Alert if Ray Worker pods are crash looping (e.g., during Spot reclamation)
+        - alert: RayWorkerCrashLooping
+          expr: rate(kube_pod_container_status_restarts_total{namespace="kuberay", pod=~".*worker.*"}[5m]) > 0.2
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Ray Worker Frequent Restarts"
+            description: "Ray worker pods are restarting rapidly in namespace kuberay."

@@ -1,0 +1,83 @@
+# JM Comment: RayJob Custom Resource Definition to execute batch ETL & ML Pipeline
+apiVersion: ray.io/v1
+kind: RayJob
+metadata:
+  name: corporate-data-pipeline-job
+  namespace: kuberay
+  labels:
+    app.kubernetes.io/name: rayjob
+    job-type: corporate-harmonization
+spec:
+  # Triggers pipeline script inside container
+  entrypoint: python3 /home/ray/app/ray_pipeline.py
+  
+  # Reference existing cluster or embed transient cluster
+  clusterSelector:
+    ray.io/cluster: corporate-ai-cluster
+
+  # Cleanup policy after execution
+  shutdownAfterJobFinishes: false
+  ttlSecondsAfterFinished: 86400 # Retain pod logs for 24 hours for debugging
+
+  runtimeEnvYAML: |
+    env_vars:
+      ICEBERG_CATALOG_TYPE: "glue"
+      ICEBERG_S3_BUCKET: "distributed-ai-lake"
+      PYTHONUNBUFFERED: "1"
+
+  # Fallback: if running standalone, RayJob provisions ephemeral cluster using rayClusterSpec
+  rayClusterSpec:
+    rayVersion: '2.35.0'
+    headGroupSpec:
+      serviceAccountName: ray-head-sa
+      rayStartParams:
+        dashboard-host: '0.0.0.0'
+        metrics-export-port: '44217'
+        num-cpus: '0'
+      template:
+        spec:
+          nodeSelector:
+            ray-node-type: head
+          containers:
+            - name: ray-head
+              image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/distributed-ai-ray:latest
+              resources:
+                limits:
+                  cpu: '2'
+                  memory: '4Gi'
+                requests:
+                  cpu: '1'
+                  memory: '2Gi'
+    workerGroupSpecs:
+      - groupName: spot-workers
+        replicas: 2
+        minReplicas: 1
+        maxReplicas: 8
+        serviceAccountName: ray-worker-sa
+        rayStartParams:
+          resources: '"{\"actor_node\": 1}"'
+        template:
+          spec:
+            nodeSelector:
+              ray-node-type: worker
+            tolerations:
+              - key: "dedicated"
+                operator: "Equal"
+                value: "ray-worker"
+                effect: "NoSchedule"
+            containers:
+              - name: ray-worker
+                image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/distributed-ai-ray:latest
+                env:
+                  - name: LLM_API_KEY
+                    valueFrom:
+                      secretKeyRef:
+                        name: ray-llm-secret
+                        key: LLM_API_KEY
+                resources:
+                  limits:
+                    cpu: '2'
+                    memory: '8Gi'
+                  requests:
+                    cpu: '1500m'
+                    memory: '6Gi'
