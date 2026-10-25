@@ -105,7 +105,7 @@ sequenceDiagram
 |  Level 4: Local NVMe / Ephemeral Disk (/tmp/ray/spill)                        |
 |           * First-tier spilling when Plasma memory utilization exceeds 80%    |
 +-------------------------------------------------------------------------------+
-|  Level 5: Remote Object Storage (S3: s3://distributed-ai-lake/ray-spill/)     |
+|  Level 5: Remote Object Storage (S3: s3://distributed-ai-lake-d14ec094/ray-spill/) |
 |           * Distributed spill target ensuring zero OOM crashes on worker nodes|
 +-------------------------------------------------------------------------------+
 ```

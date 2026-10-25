@@ -86,6 +86,7 @@ These environment variables are consumed directly by the `ray_pipeline.py` scrip
 | :--- | :--- | :--- |
 | `LLM_API_KEY` | Kubernetes Secret `ray-llm-secret` or `/mnt/secrets-store/LLM_API_KEY` | Mounted via Secrets Store CSI Driver. Consumed by the `EntityResolver` actor. |
 | `ICEBERG_CATALOG_TYPE` | Container Env in `k8s/04-rayjob.yaml` | `glue` (default in AWS) or `sql` (for local tests). Tells PyIceberg which catalog to commit transactions to. |
-| `ICEBERG_S3_BUCKET` | Container Env in `k8s/04-rayjob.yaml` | S3 bucket name (e.g. `distributed-ai-lake`). Destination for Iceberg metadata and parquet data files. |
+| `ICEBERG_S3_BUCKET` | Container Env in `k8s/04-rayjob.yaml` | S3 bucket name (e.g. `distributed-ai-lake-d14ec094`). Destination for Iceberg metadata and parquet data files. |
+| `GLUE_DATABASE_NAME` | Container Env in `k8s/04-rayjob.yaml` | AWS Glue database name (`corporate_iceberg_db`). Holds the Iceberg table catalogs. |
 | `RAY_ADDRESS` | Auto-set by KubeRay | Connection string to the Ray Head service (e.g. `corporate-ai-cluster-head-svc:6379`). |
 | `PYTHONUNBUFFERED` | Container Env | Set to `1` so Ray task stdout/stderr streams immediately without log buffering. |

@@ -156,9 +156,10 @@ definitions:
           - export AWS_REGION=${AWS_DEFAULT_REGION:-"us-east-1"}
           - echo "Connecting to EKS Cluster $TARGET_CLUSTER in $AWS_REGION..."
           - aws eks update-kubeconfig --region $AWS_REGION --name $TARGET_CLUSTER || echo "Cluster may already be unreachable or removed"
-          - echo "=== [Stage 1: Deleting Gateway API & Cloud LoadBalancers to release AWS ENIs] ==="
-          - kubectl delete httproute --all -n kuberay --ignore-not-found=true --timeout=30s || true
-          - kubectl delete gateway --all -n kuberay --ignore-not-found=true --timeout=60s || true
+          - echo "=== [Stage 1: Deleting Gateway API, HTTPRoutes & Cloud LoadBalancers to release AWS ENIs] ==="
+          - kubectl delete referencegrant --all -A --ignore-not-found=true --timeout=30s || true
+          - kubectl delete httproute --all -A --ignore-not-found=true --timeout=30s || true
+          - kubectl delete gateway --all -A --ignore-not-found=true --timeout=60s || true
           - kubectl delete gatewayclass --all --ignore-not-found=true --timeout=30s || true
           - echo "Checking and deleting any Service of type LoadBalancer across all namespaces..."
           - |
@@ -172,8 +173,8 @@ definitions:
           - kubectl delete -f k8s/07-monitoring.yaml --ignore-not-found=true --timeout=60s || true
           - kubectl delete namespace monitoring --ignore-not-found=true --timeout=60s || true
           - echo "=== [Stage 3: Deleting RayJobs & RayClusters] ==="
-          - kubectl delete rayjob --all -n kuberay --ignore-not-found=true --timeout=30s || true
-          - kubectl delete raycluster --all -n kuberay --ignore-not-found=true --timeout=60s || true
+          - kubectl delete rayjob --all -A --ignore-not-found=true --timeout=30s || true
+          - kubectl delete raycluster --all -A --ignore-not-found=true --timeout=60s || true
           - kubectl patch rayjob corporate-data-pipeline-job -n kuberay -p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true
           - kubectl delete pod -l ray.io/node-type=worker -n kuberay --ignore-not-found=true || true
           - kubectl delete pod -l ray.io/node-type=head -n kuberay --ignore-not-found=true || true
@@ -184,9 +185,32 @@ definitions:
           - kubectl delete -f k8s/02-irsa-serviceaccount.yaml --ignore-not-found=true --timeout=30s || true
           - kubectl delete -f k8s/01-secrets.yaml --ignore-not-found=true --timeout=30s || true
           - kubectl delete namespace kuberay --ignore-not-found=true --timeout=60s || true
+          - echo "=== [Stage 5: Cleaning up Glue Iceberg Catalog Tables] ==="
+          - |
+            echo "Checking tables in AWS Glue database corporate_iceberg_db..."
+            TABLES=$(aws glue get-tables --database-name corporate_iceberg_db --region $AWS_REGION --query "TableList[].Name" --output text 2>/dev/null || true)
+            for tbl in $TABLES; do
+              if [ -n "$tbl" ] && [ "$tbl" != "None" ]; then
+                echo "Deleting Glue catalog table: $tbl"
+                aws glue delete-table --database-name corporate_iceberg_db --name "$tbl" --region $AWS_REGION || true
+              fi
+            done
+          - echo "=== [Stage 6: Purging S3 Data Lake Bucket Objects & Versions] ==="
+          - |
+            export TARGET_BUCKET=${ICEBERG_S3_BUCKET:-"distributed-ai-lake-d14ec094"}
+            echo "Purging all objects and versions in s3://$TARGET_BUCKET..."
+            aws s3 rm "s3://$TARGET_BUCKET" --recursive 2>/dev/null || true
+            aws s3api list-object-versions --bucket "$TARGET_BUCKET" --region $AWS_REGION --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' --output json > /tmp/versions.json 2>/dev/null || true
+            if [ -s /tmp/versions.json ] && [ "$(cat /tmp/versions.json)" != '{"Objects": null}' ]; then
+              aws s3api delete-objects --bucket "$TARGET_BUCKET" --delete file:///tmp/versions.json --region $AWS_REGION 2>/dev/null || true
+            fi
+            aws s3api list-object-versions --bucket "$TARGET_BUCKET" --region $AWS_REGION --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' --output json > /tmp/markers.json 2>/dev/null || true
+            if [ -s /tmp/markers.json ] && [ "$(cat /tmp/markers.json)" != '{"Objects": null}' ]; then
+              aws s3api delete-objects --bucket "$TARGET_BUCKET" --delete file:///tmp/markers.json --region $AWS_REGION 2>/dev/null || true
+            fi
           - echo "Waiting 20 seconds for AWS Load Balancer Elastic Network Interfaces (ENIs) to cleanly detach..."
           - sleep 20
-          - echo "Kubernetes in-cluster resources, Cloud LoadBalancers, Ray, and Monitoring cleaned up successfully."
+          - echo "Kubernetes in-cluster resources, Cloud LoadBalancers, Ray, Monitoring, and Data Lake staging cleaned up successfully."
 
 pipelines:
   # ---------------------------------------------------------------------------

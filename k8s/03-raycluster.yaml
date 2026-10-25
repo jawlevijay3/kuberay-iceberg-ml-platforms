@@ -148,7 +148,9 @@ spec:
                 - name: ICEBERG_CATALOG_TYPE
                   value: "glue"
                 - name: ICEBERG_S3_BUCKET
-                  value: "distributed-ai-lake"
+                  value: "distributed-ai-lake-d14ec094"
+                - name: GLUE_DATABASE_NAME
+                  value: "corporate_iceberg_db"
           volumes:
             - name: dshm
               emptyDir:

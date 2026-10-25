@@ -23,7 +23,8 @@ spec:
   runtimeEnvYAML: |
     env_vars:
       ICEBERG_CATALOG_TYPE: "glue"
-      ICEBERG_S3_BUCKET: "distributed-ai-lake"
+      ICEBERG_S3_BUCKET: "distributed-ai-lake-d14ec094"
+      GLUE_DATABASE_NAME: "corporate_iceberg_db"
       PYTHONUNBUFFERED: "1"
 
   # Fallback: if running standalone, RayJob provisions ephemeral cluster using rayClusterSpec
