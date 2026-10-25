@@ -33,5 +33,5 @@ ENV PYTHONUNBUFFERED=1 \
     RAY_DISABLE_DOCKER_CPU_WARNING=1 \
     ICEBERG_CATALOG_TYPE=glue
 
-# Entrypoint executes ray_pipeline.py
-ENTRYPOINT ["python3", "/home/ray/app/ray_pipeline.py"]
+# JM Comment: Default CMD allows container to run as KubeRay daemon or execute batch jobs
+CMD ["/bin/bash"]

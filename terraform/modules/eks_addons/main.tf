@@ -87,6 +87,18 @@ resource "aws_eks_addon" "aws_secrets_store_csi_driver_provider" {
   ]
 }
 
+# 5. JM Comment: Kubernetes Metrics Server Add-on for resource monitoring & autoscaling
+resource "aws_eks_addon" "metrics_server" {
+  cluster_name                = var.cluster_name
+  addon_name                  = "metrics-server"
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "PRESERVE"
+
+  depends_on = [
+    aws_eks_addon.coredns
+  ]
+}
+
 output "ebs_csi_role_arn" {
   value = aws_iam_role.ebs_csi_role.arn
 }
@@ -102,4 +114,9 @@ output "ebs_csi_addon_arn" {
 output "secrets_store_csi_addon_arn" {
   value = aws_eks_addon.aws_secrets_store_csi_driver_provider.arn
 }
+
+output "metrics_server_addon_arn" {
+  value = aws_eks_addon.metrics_server.arn
+}
+
 

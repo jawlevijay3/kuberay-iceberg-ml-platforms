@@ -99,6 +99,9 @@ definitions:
             check_addon "aws-ebs-csi-driver"
             check_addon "eks-pod-identity-agent"
             check_addon "aws-secrets-store-csi-driver-provider"
+            check_addon "metrics-server"
+          - echo "Applying Kubernetes Metrics Server..."
+          - kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml || true
           - echo "Applying Gateway API CRDs..."
           - kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.1.0/standard-install.yaml || true
           - echo "Applying KubeRay CRDs..."
@@ -112,7 +115,7 @@ definitions:
           - kubectl apply -f k8s/01-secrets.yaml
           - kubectl apply -f k8s/02-irsa-serviceaccount.yaml
           - kubectl apply -f k8s/06-gateway-api.yaml
-          - echo "Cluster prerequisites, Secrets Store CSI Driver, and addons verified successfully."
+          - echo "Cluster prerequisites, Metrics Server, Secrets Store CSI Driver, and addons verified successfully."
 
     # -------------------------------------------------------------------------
     # Deploy RayCluster & RayJob CRD
@@ -267,6 +270,7 @@ pipelines:
             - terraform import module.eks_addons.aws_eks_addon.coredns ${EKS_CLUSTER_NAME}:coredns || true
             - terraform import module.eks_addons.aws_eks_addon.aws_ebs_csi_driver ${EKS_CLUSTER_NAME}:aws-ebs-csi-driver || true
             - terraform import module.eks_addons.aws_eks_addon.aws_secrets_store_csi_driver_provider ${EKS_CLUSTER_NAME}:aws-secrets-store-csi-driver-provider || true
+            - terraform import module.eks_addons.aws_eks_addon.metrics_server ${EKS_CLUSTER_NAME}:metrics-server || true
             - terraform apply -auto-approve
       - step:
           name: "Verify Infrastructure Health"
@@ -279,3 +283,29 @@ pipelines:
       - step: *build-and-push
       - step: *check-prerequisites
       - step: *deploy-rayjob
+
+    # -------------------------------------------------------------------------
+    # Custom Option 6: Clean Tear-down of Existing RayJob & Immediate Redeployment
+    # -------------------------------------------------------------------------
+    6-delete-and-redeploy-rayjob:
+      - step:
+          name: "Clean Tear-Down: Delete Existing RayJob & Reset Worker Pods"
+          image: amazon/aws-cli:2.15.15
+          script:
+            - curl -LO "https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl"
+            - chmod +x kubectl && mv kubectl /usr/local/bin/
+            - export TARGET_CLUSTER=${EXISTING_EKS_CLUSTER_NAME:-${EKS_CLUSTER_NAME:-"distributed-ai-eks"}}
+            - export AWS_REGION=${AWS_DEFAULT_REGION:-"us-east-1"}
+            - echo "Connecting to EKS Cluster $TARGET_CLUSTER in $AWS_REGION..."
+            - aws eks update-kubeconfig --region $AWS_REGION --name $TARGET_CLUSTER
+            - echo "Deleting existing RayJob resources if present..."
+            - kubectl delete rayjob corporate-data-pipeline-job -n kuberay --ignore-not-found=true --timeout=30s || kubectl patch rayjob corporate-data-pipeline-job -n kuberay -p '{"metadata":{"finalizers":[]}}' --type=merge || true
+            - echo "Clearing out crashlooping or stuck worker pods..."
+            - kubectl delete pod -l ray.io/node-type=worker -n kuberay --ignore-not-found=true
+            - kubectl delete pod -l ray.io/node-type=specialized-worker -n kuberay --ignore-not-found=true
+            - echo "Existing RayJob deleted and worker pods reset."
+      - step: *unit-tests
+      - step: *build-and-push
+      - step: *check-prerequisites
+      - step: *deploy-rayjob
+
