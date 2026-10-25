@@ -134,6 +134,9 @@ definitions:
           - aws eks update-kubeconfig --region $AWS_REGION --name $TARGET_CLUSTER || echo "Local cluster mode"
           - echo "Deploying Production RayCluster (Head + Spot Workers + Bottlerocket Resolver)..."
           - kubectl apply -f k8s/03-raycluster.yaml
+          - echo "Cleaning up any previously completed RayJob to ensure clean run..."
+          - kubectl delete rayjob corporate-data-pipeline-job -n kuberay --ignore-not-found=true
+          - kubectl delete pod -l job-type=corporate-harmonization -n kuberay --ignore-not-found=true
           - echo "Deploying RayJob CRD (Ingest -> Resolve -> Iceberg -> Ray Train)..."
           - kubectl apply -f k8s/04-rayjob.yaml
           - echo "RayJob submitted successfully."
@@ -369,3 +372,10 @@ pipelines:
     # -------------------------------------------------------------------------
     7-teardown-eks-workloads-only:
       - step: *teardown-k8s-workloads
+
+    # -------------------------------------------------------------------------
+    # Custom Option 8: Fast Trigger RayJob (Deploy/Re-run without rebuilding image)
+    # -------------------------------------------------------------------------
+    8-trigger-rayjob-only:
+      - step: *deploy-rayjob
+
