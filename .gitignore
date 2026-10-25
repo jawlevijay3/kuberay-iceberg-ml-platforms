@@ -18,14 +18,3 @@ iceberg_warehouse/
 # OS files
 .DS_Store
 Thumbs.db
-
-# Terraform & Ray Ignores
-.terraform/
-*.tfstate
-*.tfstate.*
-.terraform.lock.hcl
-__pycache__/
-.pytest_cache/
-/tmp/ray/
-iceberg_warehouse/
-catalog.db

@@ -1,4 +1,4 @@
-# JM Comment: Production RayCluster CRD with Head (On-Demand) and Worker (Spot) Separation
+# JM Comment: Production RayCluster CRD with Head, General Spot Workers, and Bottlerocket Resolver Workers
 apiVersion: ray.io/v1
 kind: RayCluster
 metadata:
@@ -10,23 +10,18 @@ metadata:
 spec:
   rayVersion: '2.35.0'
   # -----------------------------------------------------------------------
-  # Head Node Specification (Pinned to On-Demand Node Group)
+  # Head Node: Dedicated to GCS & Orchestration (Pinned to On-Demand Pool)
   # -----------------------------------------------------------------------
   headGroupSpec:
     serviceAccountName: ray-head-sa
     rayStartParams:
       dashboard-host: '0.0.0.0'
-      metrics-export-port: '44217'
-      num-cpus: '0' # Head node is dedicated to coordination; does not execute heavy user tasks
+      num-cpus: '0' # Dedicated to cluster coordination; zero user tasks
       block: 'true'
     template:
       metadata:
         labels:
           ray.io/node-type: head
-        annotations:
-          prometheus.io/scrape: 'true'
-          prometheus.io/port: '44217'
-          prometheus.io/path: '/metrics'
       spec:
         nodeSelector:
           ray-node-type: head
@@ -52,41 +47,37 @@ spec:
                 name: dashboard
               - containerPort: 10001
                 name: client
-              - containerPort: 44217
-                name: metrics
-            env:
-              - name: RAY_PROMETHEUS_HOST
-                value: "http://prometheus-k8s.monitoring.svc:9090"
         volumes:
-          # JM Comment: Crucial for high-throughput Ray Data shared memory /dev/shm
           - name: dshm
             emptyDir:
               medium: Memory
               sizeLimit: 2Gi
 
   # -----------------------------------------------------------------------
-  # Worker Node Group Specification (Pinned to Auto-scaling Spot Pool)
+  # Worker Groups: Decoupled into General Spot Workers & Bottlerocket Resolver
   # -----------------------------------------------------------------------
   workerGroupSpecs:
-    - groupName: spot-worker-group
+    # Worker Group 1: General Spot Workers (Parallel Ingestion & Data Tasks)
+    - groupName: general-spot-workers
       replicas: 2
       minReplicas: 1
-      maxReplicas: 10
+      maxReplicas: 8
       serviceAccountName: ray-worker-sa
       rayStartParams:
-        # JM Comment: Declares custom resource 'actor_node: 1' for EntityResolver scheduling
-        resources: '"{\"actor_node\": 1}"'
-        object-store-memory: '3221225472' # 3 GiB Object Store per worker
+        object-store-memory: '3221225472' # 3 GiB Plasma Object Store
+        # JM Comment: Explicit object spilling configuration to disk/S3
+        system-config: '{"object_spilling_config":"{\"type\":\"filesystem\",\"params\":{\"directory\":\"/tmp/ray/spill\"}}"}'
         block: 'true'
       template:
         metadata:
           labels:
             ray.io/node-type: worker
+            workload: general
             lifecycle: Ec2Spot
         spec:
-          # Pin to Spot worker node group
           nodeSelector:
             ray-node-type: worker
+            workload: general
           tolerations:
             - key: "dedicated"
               operator: "Equal"
@@ -97,10 +88,10 @@ spec:
               image: rayproject/ray:2.35.0-py310
               imagePullPolicy: IfNotPresent
               lifecycle:
-                # JM Comment: Graceful Spot interruption handling: cleanly evicts tasks and flushes objects
+                # JM Comment: Graceful drain giving 60 seconds to finish tasks and spill objects
                 preStop:
                   exec:
-                    command: ["/bin/sh", "-c", "ray stop --force"]
+                    command: ["/bin/sh", "-c", "ray stop --grace-period 60"]
               resources:
                 limits:
                   cpu: '2'
@@ -111,14 +102,9 @@ spec:
               volumeMounts:
                 - mountPath: /dev/shm
                   name: dshm
-                - mountPath: /tmp/ray
+                - mountPath: /tmp/ray/spill
                   name: ray-spill-storage
               env:
-                - name: LLM_API_KEY
-                  valueFrom:
-                    secretKeyRef:
-                      name: ray-llm-secret
-                      key: LLM_API_KEY
                 - name: ICEBERG_CATALOG_TYPE
                   value: "glue"
                 - name: ICEBERG_S3_BUCKET
@@ -130,3 +116,61 @@ spec:
                 sizeLimit: 4Gi
             - name: ray-spill-storage
               emptyDir: {}
+
+    # Worker Group 2: Bottlerocket Specialized Resolver Workers (2 CPU, 16 GB RAM)
+    # JM Comment: Dedicated Bottlerocket node pool hosting EntityResolver actor
+    - groupName: specialized-resolver-workers
+      replicas: 1
+      minReplicas: 1
+      maxReplicas: 4
+      serviceAccountName: ray-worker-sa
+      rayStartParams:
+        # JM Comment: Custom Ray resource 'actor_node: 1' enables strict actor affinity
+        resources: '"{\"actor_node\": 1}"'
+        object-store-memory: '4294967296' # 4 GiB Object Store
+        block: 'true'
+      template:
+        metadata:
+          labels:
+            ray.io/node-type: specialized-worker
+            workload: entity-resolver
+        spec:
+          nodeSelector:
+            ray-node-type: specialized-worker
+            workload: entity-resolver
+          tolerations:
+            - key: "dedicated"
+              operator: "Equal"
+              value: "entity-resolver"
+              effect: "NoSchedule"
+          containers:
+            - name: ray-resolver-worker
+              image: rayproject/ray:2.35.0-py310
+              imagePullPolicy: IfNotPresent
+              lifecycle:
+                preStop:
+                  exec:
+                    command: ["/bin/sh", "-c", "ray stop --grace-period 60"]
+              resources:
+                limits:
+                  cpu: '2'
+                  memory: '14Gi'
+                requests:
+                  cpu: '1800m'
+                  memory: '10Gi'
+              volumeMounts:
+                - mountPath: /dev/shm
+                  name: dshm
+              env:
+                - name: LLM_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: ray-llm-secret
+                      key: LLM_API_KEY
+                - name: ICEBERG_CATALOG_TYPE
+                  value: "glue"
+          volumes:
+            - name: dshm
+              emptyDir:
+                medium: Memory
+                sizeLimit: 6Gi

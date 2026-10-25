@@ -6,3 +6,7 @@ output "head_node_group_arn" {
 output "workers_node_group_arn" {
   value = aws_eks_node_group.ray_workers_spot.arn
 }
+
+output "resolver_bottlerocket_node_group_arn" {
+  value = aws_eks_node_group.ray_resolver_bottlerocket.arn
+}

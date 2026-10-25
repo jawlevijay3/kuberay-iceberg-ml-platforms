@@ -20,17 +20,17 @@ module "vpc" {
   environment  = var.environment
 }
 
-# 2. Managed Kubernetes EKS Layer (Control Plane + OIDC Provider)
+# 2. Managed Kubernetes EKS Layer (Control Plane v1.31 + OIDC Provider)
 module "eks" {
   source          = "../../modules/eks"
   cluster_name    = var.cluster_name
-  cluster_version = "1.30"
+  cluster_version = "1.31"
   vpc_id          = module.vpc.vpc_id
   subnet_ids      = module.vpc.private_subnets
   environment     = var.environment
 }
 
-# Configure Kubernetes and Helm providers to communicate with the newly created EKS cluster
+# Configure Kubernetes and Helm providers
 data "aws_eks_cluster_auth" "cluster" {
   name = module.eks.cluster_name
 }
@@ -49,7 +49,7 @@ provider "helm" {
   }
 }
 
-# 3. Decoupled Node Pools Layer (On-Demand Head Node Pool + Spot Worker Pool)
+# 3. Decoupled Node Pools: Head (On-Demand), Spot Workers, and Bottlerocket Resolver (2 CPU 16GB)
 module "node_pools" {
   source       = "../../modules/node_pools"
   cluster_name = module.eks.cluster_name
@@ -78,8 +78,8 @@ module "iam_irsa" {
   service_account_name = "ray-worker-sa"
 }
 
-# 6. KubeRay Operator Lifecycle Layer
-module "kuberay_operator" {
+# 6. KubeRay Operator and Gateway API Controller Layer
+module "kuberay_gateway" {
   source     = "../../modules/kuberay"
   depends_on = [module.node_pools]
 }

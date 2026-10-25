@@ -1,4 +1,4 @@
-# JM Comment: Dedicated EKS Node Groups for Ray Head (On-Demand) and Ray Workers (Spot)
+# JM Comment: Dedicated EKS Node Groups for Ray Head, General Spot Workers, and Bottlerocket Resolver Workers
 
 # IAM Role for EKS Node Groups
 resource "aws_iam_role" "nodes" {
@@ -36,8 +36,7 @@ resource "aws_iam_role_policy_attachment" "node_amazon_ec2_container_registry_re
 # -------------------------------------------------------------------------
 # Node Pool 1: Ray Head & System Services (Reliable On-Demand Instances)
 # -------------------------------------------------------------------------
-# JM Comment: Head node hosts GCS (Global Control Store), Dashboard, and API Server.
-# Must remain stable and never run on Spot to avoid cluster-wide state loss.
+# JM Comment: Head node hosts GCS and API Server. Never placed on Spot.
 resource "aws_eks_node_group" "ray_head_system" {
   cluster_name    = var.cluster_name
   node_group_name = "${var.cluster_name}-head-system-ondemand"
@@ -75,30 +74,27 @@ resource "aws_eks_node_group" "ray_head_system" {
 }
 
 # -------------------------------------------------------------------------
-# Node Pool 2: Ray Workers (Cost-Optimized Auto-scaling Spot Instances)
+# Node Pool 2: General Ray Workers (Auto-scaling Spot Instances)
 # -------------------------------------------------------------------------
-# JM Comment: Spot worker pool with instance diversification (m5, m5a, c5, r5)
-# to minimize simultaneous reclamation risks from AWS Spot capacity pools.
+# JM Comment: Multi-family Spot diversification for general ingestion & tasks.
 resource "aws_eks_node_group" "ray_workers_spot" {
   cluster_name    = var.cluster_name
-  node_group_name = "${var.cluster_name}-workers-spot"
+  node_group_name = "${var.cluster_name}-general-workers-spot"
   node_role_arn   = aws_iam_role.nodes.arn
   subnet_ids      = var.subnet_ids
   capacity_type   = "SPOT"
 
-  # Diversified instance types for Spot resilience
   instance_types = [
-    "m5.xlarge",  # 4 vCPU, 16 GiB
+    "m5.xlarge",  # 4 vCPU, 16 GiB Intel
     "m5a.xlarge", # AMD alternative
     "c5.xlarge",  # Compute-optimized fallback
-    "r5.xlarge",  # Memory-optimized fallback
     "m4.xlarge"   # Previous gen fallback
   ]
 
   scaling_config {
     desired_size = 2
-    max_size     = 10
-    min_size     = 0
+    max_size     = 8
+    min_size     = 1
   }
 
   update_config {
@@ -106,10 +102,9 @@ resource "aws_eks_node_group" "ray_workers_spot" {
   }
 
   labels = {
-    "ray-node-type"    = "worker"
-    "ray.io/node-type" = "worker"
-    "actor_node"       = "true"
-    "lifecycle"        = "Ec2Spot"
+    "ray-node-type" = "worker"
+    "workload"      = "general"
+    "lifecycle"     = "Ec2Spot"
   }
 
   taint {
@@ -119,7 +114,62 @@ resource "aws_eks_node_group" "ray_workers_spot" {
   }
 
   tags = {
-    "Name"                                          = "${var.cluster_name}-worker-spot"
+    "Name"                                          = "${var.cluster_name}-general-worker-spot"
+    "k8s.io/cluster-autoscaler/enabled"             = "true"
+    "k8s.io/cluster-autoscaler/${var.cluster_name}" = "owned"
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.node_amazon_eks_worker_node_policy,
+    aws_iam_role_policy_attachment.node_amazon_eks_cni_policy,
+    aws_iam_role_policy_attachment.node_amazon_ec2_container_registry_read_only,
+  ]
+}
+
+# -------------------------------------------------------------------------
+# Node Pool 3: Bottlerocket Specialized Resolver Workers (2 CPU, 16 GB RAM)
+# -------------------------------------------------------------------------
+# JM Comment: Dedicated Bottlerocket AMI node group provisioned specifically for
+# the stateful EntityResolver actor requiring 2 CPU and 16 GB RAM configuration.
+resource "aws_eks_node_group" "ray_resolver_bottlerocket" {
+  cluster_name    = var.cluster_name
+  node_group_name = "${var.cluster_name}-resolver-bottlerocket"
+  node_role_arn   = aws_iam_role.nodes.arn
+  subnet_ids      = var.subnet_ids
+  capacity_type   = "ON_DEMAND"
+  ami_type        = "BOTTLEROCKET_x86_64"
+
+  # 2 vCPU and 16 GB RAM configuration: r5.large (2 vCPU, 16 GiB RAM) & r6i.large (2 vCPU, 16 GiB RAM)
+  instance_types = [
+    "r5.large", # 2 vCPU, 16 GiB RAM
+    "r6i.large" # 2 vCPU, 16 GiB RAM
+  ]
+
+  scaling_config {
+    desired_size = 1
+    max_size     = 4
+    min_size     = 1
+  }
+
+  update_config {
+    max_unavailable = 1
+  }
+
+  labels = {
+    "ray-node-type" = "specialized-worker"
+    "workload"      = "entity-resolver"
+    "os"            = "bottlerocket"
+    "specs"         = "2cpu-16gb"
+  }
+
+  taint {
+    key    = "dedicated"
+    value  = "entity-resolver"
+    effect = "NO_SCHEDULE"
+  }
+
+  tags = {
+    "Name"                                          = "${var.cluster_name}-resolver-bottlerocket"
     "k8s.io/cluster-autoscaler/enabled"             = "true"
     "k8s.io/cluster-autoscaler/${var.cluster_name}" = "owned"
   }

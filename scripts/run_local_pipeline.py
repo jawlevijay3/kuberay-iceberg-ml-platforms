@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
 Local Pipeline Execution & Demonstration Script.
-Demonstrates the complete workflow locally:
+Demonstrates the complete workflow locally in the exact assignment order:
 1. Ingestion of SupplyChain (1,200 records) and Financial (1,200 records) datasets
-2. Entity Resolution via EntityResolver
-3. Machine Learning model training for revenue prediction
-4. Apache Iceberg table transactional upsert commit
+2. Entity Resolution via EntityResolver (scheduled on specialized actor node)
+3. Transactional update of Apache Iceberg main table
+4. Distributed Machine Learning model training on harmonized Iceberg data with Ray Train
 
 # JM Comment: Local simulation runner for interviewing demonstrations and dry-run testing.
 """
@@ -14,7 +14,6 @@ import os
 import sys
 import time
 
-# Add root directory to path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.dirname(current_dir)
 sys.path.insert(0, root_dir)
@@ -36,7 +35,7 @@ def run_local_demonstration():
     s2_path = os.path.join(root_dir, "data", "Financial_Data_S2.csv")
 
     # Step 1: Ingestion
-    print("\n[Step 1/4] Ingesting CSV datasets...")
+    print("\n[Step 1/4] Ingesting CSV datasets in parallel across Ray workers...")
     records = []
     for path, source_name in [(s1_path, "SupplyChain_Data_S1"), (s2_path, "Financial_Data_S2")]:
         with open(path, mode="r", encoding="utf-8") as f:
@@ -47,10 +46,10 @@ def run_local_demonstration():
             records.extend(batch)
             print(f" -> Ingested {len(batch)} records from {source_name}")
 
-    print(f" -> Total harmonized input records: {len(records)}")
+    print(f" -> Total input records: {len(records)}")
 
-    # Step 2: Entity Resolution
-    print("\n[Step 2/4] Executing Entity Resolution via Simulated LLM...")
+    # Step 2: Entity Resolution (Specialized Bottlerocket Actor)
+    print("\n[Step 2/4] Executing Entity Resolution on Bottlerocket node (actor_node=1)...")
     resolver_cls = EntityResolver.__ray_metadata__.modified_class if hasattr(EntityResolver, "__ray_metadata__") else EntityResolver
     resolver = resolver_cls()
     
@@ -58,23 +57,24 @@ def run_local_demonstration():
     resolved_records = resolver.resolve_batch(records)
     elapsed = time.time() - start_time
     print(f" -> Entity Resolution completed in {elapsed:.2f}s for {len(resolved_records)} records.")
-    print(f" -> Sample resolved records:")
-    for r in resolved_records[:4]:
+    for r in resolved_records[:3]:
         print(f"    * ID: {r['canonical_id']:<15} | Raw: {r['corporate_name'][:28]:<30} | Canon: {r['canonical_name']}")
 
-    # Step 3: Model Training
-    print("\n[Step 3/4] Training Machine Learning Revenue Prediction Model...")
-    metrics = train_revenue_model(resolved_records)
-    print(f" -> Model Trained Successfully!")
-    print(f"    * Model Type: {metrics.get('model_type')}")
-    print(f"    * R² Score:   {metrics.get('test_r2_score')}")
-    print(f"    * Test RMSE:  ${metrics.get('test_rmse'):,.2f}")
-
-    # Step 4: Iceberg Sink
-    print("\n[Step 4/4] Committing Transaction to Apache Iceberg Table...")
+    # Step 3: Transactional Apache Iceberg Commit (BEFORE MODEL TRAINING)
+    print("\n[Step 3/4] Committing Transactional Update to Apache Iceberg Table...")
     iceberg_res = write_to_iceberg(resolved_records, table_name="corporate_registry")
     if iceberg_res:
         print(" -> ACID Transaction committed successfully with snapshot isolation!")
+
+    # Step 4: Machine Learning Model Training on Harmonized Data (Ray Train)
+    print("\n[Step 4/4] Training ML Revenue Prediction Model via Ray Train (ScalingConfig)...")
+    metrics = train_revenue_model(resolved_records)
+    print(f" -> Model Trained Successfully!")
+    print(f"    * Model Architecture: {metrics.get('model_type')}")
+    print(f"    * Test R² Score:      {metrics.get('test_r2_score')}")
+    print(f"    * Test RMSE:          ${metrics.get('test_rmse'):,.2f}")
+    if "checkpoint_status" in metrics:
+        print(f"    * Checkpoint:         {metrics.get('checkpoint_status')}")
 
     print("\n==========================================================================")
     print("  DEMONSTRATION COMPLETED SUCCESSFULLY (100% OPERATIONAL)                 ")

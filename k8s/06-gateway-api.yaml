@@ -1,0 +1,56 @@
+# JM Comment: Kubernetes Gateway API Specification for Ray Dashboard
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: ray-gateway-class
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+  description: "GatewayClass for Ray Cluster routing via Envoy / AWS Gateway Controller"
+---
+# JM Comment: Gateway resource exposing Ray services with modern L7 routing
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: ray-dashboard-gateway
+  namespace: kuberay
+  annotations:
+    gateway.networking.k8s.io/service-type: LoadBalancer
+spec:
+  gatewayClassName: ray-gateway-class
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Same
+    - name: https
+      protocol: HTTPS
+      port: 443
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: ray-dashboard-tls
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+# JM Comment: HTTPRoute directing traffic to the Ray Head Dashboard service (port 8265)
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: ray-dashboard-route
+  namespace: kuberay
+spec:
+  parentRefs:
+    - name: ray-dashboard-gateway
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: corporate-ai-cluster-head-svc
+          port: 8265
+          weight: 100
