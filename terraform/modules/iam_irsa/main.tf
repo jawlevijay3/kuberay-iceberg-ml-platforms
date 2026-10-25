@@ -100,6 +100,17 @@ resource "aws_iam_policy" "ray_scoped_policy" {
           "logs:DescribeLogStreams"
         ]
         Resource = ["arn:aws:logs:*:*:log-group:/aws/ray/*"]
+      },
+      # 5. JM Comment: AWS Secrets Manager permissions for Secrets Store CSI Driver
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ]
+        Resource = [
+          "arn:aws:secretsmanager:*:*:secret:distributed-ai/*"
+        ]
       }
     ]
   })

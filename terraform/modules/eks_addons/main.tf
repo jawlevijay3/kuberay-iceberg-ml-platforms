@@ -78,10 +78,10 @@ output "ebs_csi_role_arn" {
   value = aws_iam_role.ebs_csi_role.arn
 }
 
-output "coredns_addon_status" {
-  value = aws_eks_addon.coredns.status
+output "coredns_addon_arn" {
+  value = aws_eks_addon.coredns.arn
 }
 
-output "ebs_csi_addon_status" {
-  value = aws_eks_addon.aws_ebs_csi_driver.status
+output "ebs_csi_addon_arn" {
+  value = aws_eks_addon.aws_ebs_csi_driver.arn
 }
