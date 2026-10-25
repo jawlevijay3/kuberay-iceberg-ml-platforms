@@ -159,16 +159,48 @@ To eliminate monolithic state files, the infrastructure is decoupled into isolat
    ```
 4. **Result:** Ray's scheduler strictly pins the `EntityResolver` to the Bottlerocket node group.
 
-### 2. Pipeline Execution Order & Ray Train
-The pipeline executes strictly in the sequence required by the assignment:
-1. **Parallel Ingestion**: Loads SupplyChain and Financial records.
-2. **Entity Resolution**: Normalizes corporate variants into canonical IDs.
-3. **Apache Iceberg Commit**: Harmonized data is committed transactionally to `corporate_registry`.
-4. **Ray Train ML Training**: Harmonized data from Iceberg is passed to Ray Train using:
-   ```python
-   scaling_config = ScalingConfig(num_workers=2, use_gpu=False)
-   ```
-   Predicts corporate revenues with evaluation metrics (R² = 0.88+, RMSE) and model checkpointing.
+### 2. Ray Data & Train Cluster Configuration (Assignment Core Requirement)
+To support **Ray Data** for high-throughput parallel ingestion and **Ray Train** for distributed training without OOM failures, the cluster is configured with a 3-tier memory and storage strategy:
+
+1. **Shared Memory (`/dev/shm`) Configuration**:
+   - In Kubernetes, Linux `/dev/shm` defaults to only 64 MB. Because Ray's Plasma Object Store relies on zero-copy shared memory, running high-throughput ingestion without tuning `/dev/shm` causes instant `Bus error` or `Out of Memory` crashes.
+   - **Solution in `k8s/03-raycluster.yaml`**: An `emptyDir` volume with `medium: Memory` and `sizeLimit: 2Gi` is mounted at `/dev/shm` across Head and Worker pods. This allows PyArrow and Ray Data to transfer massive dataframes between worker processes without serialization overhead.
+
+2. **Object Store Limits (`object-store-memory`)**:
+   - The Plasma object store size is explicitly capped via `rayStartParams`:
+     ```yaml
+     rayStartParams:
+       object-store-memory: '2147483648' # Exactly 2 GiB Plasma Store
+     ```
+   - Capping the object store guarantees that 50% of the worker's RAM remains available for Python runtime memory, Raylet overhead, and PyIceberg/PyArrow heap allocations, preventing Kubernetes OOMKilled events.
+
+3. **Multi-Tier Plasma Object Spilling (Local Disk -> S3)**:
+   - When dataset ingestion volume exceeds the 2 GiB Plasma memory threshold (utilization > 80%), Ray automatically spills older object blocks to:
+     - **Tier 1 (Local Disk)**: Mounted `emptyDir` at `/tmp/ray` for low-latency NVMe spill/restore.
+     - **Tier 2 (Remote S3)**: `s3://distributed-ai-lake-d14ec094/ray-spill/` with automated 3-day S3 lifecycle expiration.
+   - This architecture allows workers to ingest datasets orders of magnitude larger than aggregate cluster RAM.
+
+4. **Ray Train Distributed Scaling (`ScalingConfig`)**:
+   - The ML training phase leverages Ray Train's distributed execution model:
+     ```python
+     scaling_config = ScalingConfig(
+         num_workers=2,          # Distributes training across both spot worker pods
+         use_gpu=False,          # CPU-bound linear/ridge regression
+     )
+     ```
+   - Features, weights, and model checkpoints are synchronized and persisted to S3, ensuring zero training data loss if a spot instance is preempted.
+
+---
+
+### 3. Centralized Logging & Observability
+1. **Container Output Aggregation**:
+   - Every Ray worker and head pod writes structured JSON logs with `PYTHONUNBUFFERED=1` to container `stdout`/`stderr`.
+   - Pods are integrated with **AWS CloudWatch Container Insights (Fluent Bit)** and Kubernetes daemonsets, shipping logs to CloudWatch Log Group `/aws/eks/distributed-ai-eks/workloads`.
+2. **KubeRay Job Log Retention**:
+   - `k8s/04-rayjob.yaml` sets `shutdownAfterJobFinishes: false` and `ttlSecondsAfterFinished: 86400` (24 hours).
+   - This ensures all driver and task logs remain directly accessible via `kubectl logs` and the Ray Dashboard after job completion.
+3. **Prometheus & Grafana Exporters**:
+   - Ray metrics exporter on port `44217` (`/metrics`) exposes node, task, and actor latency metrics scraped by Prometheus and rendered on official Ray Grafana dashboards.
 
 ---
 
