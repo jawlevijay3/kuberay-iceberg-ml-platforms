@@ -40,7 +40,7 @@ definitions:
           - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
           - echo "Ensuring ECR repository distributed-ai-ray exists..."
           - aws ecr describe-repositories --repository-names distributed-ai-ray --region $AWS_REGION || aws ecr create-repository --repository-name distributed-ai-ray --region $AWS_REGION
-          - echo "Building Docker image: $ECR_REGISTRY/distributed-ai-ray:$IMAGE_TAG and :latest..."
+          - echo "Building Docker image for $ECR_REGISTRY/distributed-ai-ray ($IMAGE_TAG and latest)..."
           - docker build -t $ECR_REGISTRY/distributed-ai-ray:$IMAGE_TAG -t $ECR_REGISTRY/distributed-ai-ray:latest .
           - echo "Pushing Docker images to AWS ECR..."
           - docker push $ECR_REGISTRY/distributed-ai-ray:$IMAGE_TAG
@@ -232,7 +232,7 @@ pipelines:
             - chmod +x kubectl && mv kubectl /usr/local/bin/
             - export TARGET_CLUSTER=${EXISTING_EKS_CLUSTER_NAME:-"my-existing-eks-cluster"}
             - export AWS_REGION=${AWS_DEFAULT_REGION:-"us-east-1"}
-            - echo "Connecting to existing cluster: $TARGET_CLUSTER ($AWS_REGION)..."
+            - echo "Connecting to existing cluster $TARGET_CLUSTER in $AWS_REGION..."
             - aws eks update-kubeconfig --region $AWS_REGION --name $TARGET_CLUSTER
             - kubectl get nodes -o wide
             - echo "Applying Gateway API and KubeRay CRDs..."
