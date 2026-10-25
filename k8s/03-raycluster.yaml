@@ -13,7 +13,6 @@ spec:
   # Head Node: Dedicated to GCS & Orchestration (Pinned to On-Demand Pool)
   # -----------------------------------------------------------------------
   headGroupSpec:
-    serviceAccountName: ray-head-sa
     rayStartParams:
       dashboard-host: '0.0.0.0'
       num-cpus: '0'
@@ -23,12 +22,13 @@ spec:
         labels:
           ray.io/node-type: head
       spec:
+        serviceAccountName: ray-head-sa
         nodeSelector:
           ray-node-type: head
           workload: system
         containers:
           - name: ray-head
-            image: rayproject/ray:2.35.0-py310
+            image: 693880751318.dkr.ecr.us-east-1.amazonaws.com/distributed-ai-ray:latest
             imagePullPolicy: IfNotPresent
             resources:
               limits:
@@ -62,7 +62,6 @@ spec:
       replicas: 2
       minReplicas: 1
       maxReplicas: 8
-      serviceAccountName: ray-worker-sa
       rayStartParams:
         object-store-memory: '3221225472' # 3 GiB Plasma Object Store
         system-config: '{"object_spilling_config":"{\"type\":\"filesystem\",\"params\":{\"directory\":\"/tmp/ray/spill\"}}"}'
@@ -74,6 +73,7 @@ spec:
             workload: general
             lifecycle: Ec2Spot
         spec:
+          serviceAccountName: ray-worker-sa
           nodeSelector:
             ray-node-type: worker
             workload: general
@@ -84,7 +84,7 @@ spec:
               effect: "NoSchedule"
           containers:
             - name: ray-worker
-              image: rayproject/ray:2.35.0-py310
+              image: 693880751318.dkr.ecr.us-east-1.amazonaws.com/distributed-ai-ray:latest
               imagePullPolicy: IfNotPresent
               lifecycle:
                 preStop:
@@ -121,7 +121,6 @@ spec:
       replicas: 1
       minReplicas: 1
       maxReplicas: 4
-      serviceAccountName: ray-worker-sa
       rayStartParams:
         resources: '"{\"actor_node\": 1}"'
         object-store-memory: '4294967296'
@@ -132,6 +131,7 @@ spec:
             ray.io/node-type: specialized-worker
             workload: entity-resolver
         spec:
+          serviceAccountName: ray-worker-sa
           nodeSelector:
             ray-node-type: specialized-worker
             workload: entity-resolver
@@ -142,7 +142,7 @@ spec:
               effect: "NoSchedule"
           containers:
             - name: ray-resolver-worker
-              image: rayproject/ray:2.35.0-py310
+              image: 693880751318.dkr.ecr.us-east-1.amazonaws.com/distributed-ai-ray:latest
               imagePullPolicy: IfNotPresent
               lifecycle:
                 preStop:

@@ -34,12 +34,34 @@ definitions:
           - docker
         script:
           - export AWS_REGION=${AWS_DEFAULT_REGION:-"us-east-1"}
-          - export ECR_REGISTRY=${ECR_REGISTRY_URL:-"123456789012.dkr.ecr.us-east-1.amazonaws.com"}
+          - export ECR_REGISTRY=${ECR_REGISTRY_URL:-"693880751318.dkr.ecr.us-east-1.amazonaws.com"}
           - export IMAGE_TAG="${BITBUCKET_COMMIT:0:8}"
-          - echo "Authenticating with AWS ECR in $AWS_REGION..."
-          - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY || echo "Using local/mock credentials"
+          - echo "Authenticating with AWS ECR in $AWS_REGION for registry $ECR_REGISTRY..."
+          - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+          - echo "Ensuring ECR repository distributed-ai-ray exists..."
+          - aws ecr describe-repositories --repository-names distributed-ai-ray --region $AWS_REGION || aws ecr create-repository --repository-name distributed-ai-ray --region $AWS_REGION
+          - echo "Building Docker image: $ECR_REGISTRY/distributed-ai-ray:$IMAGE_TAG and :latest..."
           - docker build -t $ECR_REGISTRY/distributed-ai-ray:$IMAGE_TAG -t $ECR_REGISTRY/distributed-ai-ray:latest .
-          - docker push $ECR_REGISTRY/distributed-ai-ray:$IMAGE_TAG || echo "Simulated ECR push in test environment"
+          - echo "Pushing Docker images to AWS ECR..."
+          - docker push $ECR_REGISTRY/distributed-ai-ray:$IMAGE_TAG
+          - docker push $ECR_REGISTRY/distributed-ai-ray:latest
+          - echo "=== [Verification] Auditing image existence and size in ECR ==="
+          - |
+            IMAGE_INFO=$(aws ecr describe-images --repository-name distributed-ai-ray --image-ids imageTag=$IMAGE_TAG --region $AWS_REGION --query "imageDetails[0]" --output json)
+            if [ -z "$IMAGE_INFO" ] || [ "$IMAGE_INFO" == "null" ]; then
+              echo "FATAL: Image tag $IMAGE_TAG verification failed in ECR repository distributed-ai-ray!"
+              exit 1
+            fi
+            SIZE_BYTES=$(echo "$IMAGE_INFO" | grep -o '"imageSizeInBytes": [0-9]*' | awk '{print $2}')
+            SIZE_MB=$(awk "BEGIN {printf \"%.2f\", $SIZE_BYTES/1048576}")
+            DIGEST=$(echo "$IMAGE_INFO" | grep -o '"imageDigest": "[^"]*"' | cut -d'"' -f4)
+            echo "----------------------------------------------------------------"
+            echo " [VERIFIED] Image successfully published to AWS ECR"
+            echo " Repository  : distributed-ai-ray"
+            echo " Tag         : $IMAGE_TAG (and latest)"
+            echo " Image Digest: $DIGEST"
+            echo " Image Size  : $SIZE_MB MB ($SIZE_BYTES bytes)"
+            echo "----------------------------------------------------------------"
 
     # -------------------------------------------------------------------------
     # Dynamic Addon Health Check & Cluster Prerequisites

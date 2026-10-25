@@ -29,18 +29,18 @@ spec:
   rayClusterSpec:
     rayVersion: '2.35.0'
     headGroupSpec:
-      serviceAccountName: ray-head-sa
       rayStartParams:
         dashboard-host: '0.0.0.0'
         metrics-export-port: '44217'
         num-cpus: '0'
       template:
         spec:
+          serviceAccountName: ray-head-sa
           nodeSelector:
             ray-node-type: head
           containers:
             - name: ray-head
-              image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/distributed-ai-ray:latest
+              image: 693880751318.dkr.ecr.us-east-1.amazonaws.com/distributed-ai-ray:latest
               resources:
                 limits:
                   cpu: '2'
@@ -53,11 +53,11 @@ spec:
         replicas: 2
         minReplicas: 1
         maxReplicas: 8
-        serviceAccountName: ray-worker-sa
         rayStartParams:
           resources: '"{\"actor_node\": 1}"'
         template:
           spec:
+            serviceAccountName: ray-worker-sa
             nodeSelector:
               ray-node-type: worker
             tolerations:
@@ -67,7 +67,7 @@ spec:
                 effect: "NoSchedule"
             containers:
               - name: ray-worker
-                image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/distributed-ai-ray:latest
+                image: 693880751318.dkr.ecr.us-east-1.amazonaws.com/distributed-ai-ray:latest
                 env:
                   - name: LLM_API_KEY
                     valueFrom:
