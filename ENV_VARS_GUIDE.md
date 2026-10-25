@@ -1,37 +1,35 @@
 # Environment Variables & Secrets Configuration Guide
 
-> **Distributed AI Foundation: Master Reference for Variables & Secrets Storage**  
-> Complete inventory of all environment variables, cloud secrets, repository variables, and where each must be stored.
+> **Distributed AI Foundation: Master Reference for Variables, Secrets Store CSI Driver & Bitbucket Execution**  
+> Complete inventory of all environment variables, cloud secrets, repository variables, and the 2-stage execution process.
 
 <!-- # JM Comment: Master environment variables and secrets configuration guide -->
 
 ---
 
-## 📑 Summary: Where to Store Each Variable
+## 📑 Two-Stage Infrastructure & Deployment Workflow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ 1. Bitbucket Repository Variables (CI/CD Pipeline Execution)                │
-│    Location: Repository Settings -> Pipelines -> Repository Variables       │
-│    - AWS_ACCESS_KEY_ID (Secured)                                            │
-│    - AWS_SECRET_ACCESS_KEY (Secured)                                        │
-│    - AWS_DEFAULT_REGION                                                     │
-│    - EKS_CLUSTER_NAME                                                       │
-│    - EXISTING_EKS_CLUSTER_NAME (Optional for existing cluster deployment)  │
-│    - ECR_REGISTRY_URL                                                       │
-│    - LLM_API_KEY (Secured)                                                  │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ 2. AWS Secrets Manager (Production Runtime Zero-Trust Secret)               │
-│    Location: AWS Console -> AWS Secrets Manager -> Store New Secret         │
-│    - Secret Name: distributed-ai/llm-api-key                                │
-│    - Secret Property: api_key                                               │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ 3. Kubernetes In-Cluster Secrets & ConfigMaps (Ray Runtime)                 │
-│    Location: EKS Cluster Namespace 'kuberay' via External Secrets / Manifest│
-│    - Secret: ray-llm-secret (Key: LLM_API_KEY)                              │
-│    - Env: ICEBERG_CATALOG_TYPE ("glue" or "sql")                            │
-│    - Env: ICEBERG_S3_BUCKET ("distributed-ai-lake")                         │
-│    - Env: RAY_ADDRESS (Auto-discovered by KubeRay)                          │
+│ STAGE 1: Infrastructure Provisioning (Terraform Pipeline)                   │
+│ Run Custom Pipeline: '1-terraform-deploy-infra'                             │
+│ 1. Deploys VPC, Subnets, NAT Gateways across 3 AZs                          │
+│ 2. Deploys S3 Data Lake, Iceberg Warehouse, and AWS Glue Catalog            │
+│ 3. Deploys EKS Cluster v1.34 with managed addons (VPC-CNI, CoreDNS, EBS CSI)│
+│ 4. Deploys Head Node, Spot Workers, and Bottlerocket (2CPU 16GB) Node Group │
+│ 5. Deploys KubeRay Operator, Gateway API (Envoy), and Secrets Store CSI     │
+│ 6. Automated verification confirms all AWS resources are ready.             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ STAGE 2: Pipeline Execution (RayJob Deployment Pipeline)                    │
+│ Run Custom Pipeline: '3-deploy-rayjob-only' (or merge PR to main)           │
+│ 1. Executes Unit Tests on data ingestion and canonicalization               │
+│ 2. Builds Docker container image and pushes to Amazon ECR                   │
+│ 3. Injects SecretProviderClass for AWS Secrets Store CSI Driver             │
+│ 4. Applies RayCluster and triggers RayJob CRD execution on EKS 1.34         │
+│ 5. Executes Ingestion -> Entity Resolution -> Iceberg Commit -> Ray Train   │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -43,7 +41,7 @@
 1. Open your Bitbucket repository in the browser: `https://bitbucket.org/odexglobal/odex-iac-bootstrap`
 2. In the left navigation menu, click **Repository Settings** (gear icon).
 3. Under the **Pipelines** heading, click **Repository Variables**.
-4. Add the following variables one by one:
+4. Add the following variables:
 
 | Variable Name | Description | Is Secured? | Example Value | Where & How Used |
 | :--- | :--- | :---: | :--- | :--- |
@@ -53,15 +51,15 @@
 | `EKS_CLUSTER_NAME` | Name of the primary EKS cluster managed by Terraform | NO | `distributed-ai-eks` | Target cluster for Terraform provisioning, `update-kubeconfig`, and RayJob dispatch. |
 | `EXISTING_EKS_CLUSTER_NAME` | **(Optional)** Name of an already-existing cluster | NO | `my-production-cluster` | Used exclusively by custom pipeline `4-deploy-rayjob-existing-cluster`. |
 | `ECR_REGISTRY_URL` | AWS Elastic Container Registry base URL | NO | `123456789012.dkr.ecr.us-east-1.amazonaws.com` | Docker tag and push destination for the `distributed-ai-ray` container image. |
-| `LLM_API_KEY` | Secret token for LLM-based Entity Resolution service | **YES** (Check Secured) | `sk-enterprise-token-v2` | Injected into the container and used by `EntityResolver` actor. |
+| `LLM_API_KEY` | Secret token for LLM-based Entity Resolution service | **YES** (Check Secured) | `sk-enterprise-token-v2` | Used by CI/CD and injected into Secrets Store CSI Driver. |
 
 ---
 
-## 2. AWS Secrets Manager (Production Zero-Trust Storage)
+## 2. AWS Secrets Store CSI Driver (Zero-Trust Secret Injection)
 
-In production, to eliminate hardcoded secrets in Git, `LLM_API_KEY` is stored in **AWS Secrets Manager** and synchronized dynamically to Kubernetes via the **External Secrets Operator (ESO)**:
+The platform uses the **Kubernetes Secrets Store CSI Driver** with the **AWS Secrets and Configuration Provider (ASCP)** to eliminate static secrets from Git:
 
-### How to Create in AWS Console:
+### How to Create the Secret in AWS Secrets Manager:
 1. Navigate to **AWS Secrets Manager** -> **Store a new secret**.
 2. Select **Other type of secret**.
 3. Under Key/value pairs:
@@ -69,7 +67,14 @@ In production, to eliminate hardcoded secrets in Git, `LLM_API_KEY` is stored in
    * **Value**: Paste your secret token (e.g. `sk-live-corporate-key-2026`).
 4. Set **Secret name**: `distributed-ai/llm-api-key`.
 5. Click **Store**.
-6. The External Secrets Operator configured in `k8s/01-secrets.yaml` will automatically read this secret using the pod's IRSA identity and create the Kubernetes secret `ray-llm-secret`.
+
+### How Kubernetes Mounts and Consumes the Secret:
+1. `k8s/01-secrets.yaml` defines a **`SecretProviderClass`** pointing to `distributed-ai/llm-api-key`.
+2. The `ray-resolver-worker` container in `k8s/03-raycluster.yaml` mounts the CSI volume to `/mnt/secrets-store`.
+3. The Secrets Store CSI Driver automatically reads the secret from AWS Secrets Manager using the pod's IRSA identity (`ray-worker-sa`) and:
+   * Writes the file to `/mnt/secrets-store/LLM_API_KEY`.
+   * Automatically synchronizes a native Kubernetes Secret `ray-llm-secret`.
+4. In `ray_pipeline.py`, the `EntityResolver` actor reads `LLM_API_KEY` seamlessly with zero plain-text leaks!
 
 ---
 
@@ -79,22 +84,8 @@ These environment variables are consumed directly by the `ray_pipeline.py` scrip
 
 | Variable Name | Stored In | Value / Purpose |
 | :--- | :--- | :--- |
-| `LLM_API_KEY` | Kubernetes Secret `ray-llm-secret` | Injected via `valueFrom.secretKeyRef`. Consumed by the `EntityResolver` actor in `ray_pipeline.py`. |
+| `LLM_API_KEY` | Kubernetes Secret `ray-llm-secret` or `/mnt/secrets-store/LLM_API_KEY` | Mounted via Secrets Store CSI Driver. Consumed by the `EntityResolver` actor. |
 | `ICEBERG_CATALOG_TYPE` | Container Env in `k8s/04-rayjob.yaml` | `glue` (default in AWS) or `sql` (for local tests). Tells PyIceberg which catalog to commit transactions to. |
 | `ICEBERG_S3_BUCKET` | Container Env in `k8s/04-rayjob.yaml` | S3 bucket name (e.g. `distributed-ai-lake`). Destination for Iceberg metadata and parquet data files. |
 | `RAY_ADDRESS` | Auto-set by KubeRay | Connection string to the Ray Head service (e.g. `corporate-ai-cluster-head-svc:6379`). |
 | `PYTHONUNBUFFERED` | Container Env | Set to `1` so Ray task stdout/stderr streams immediately without log buffering. |
-
----
-
-## 4. Terraform Local Variables (`terraform.tfvars`)
-
-Stored locally or passed via CI/CD for infrastructure configuration:
-* Location: `terraform/environments/prod/terraform.tfvars`
-```hcl
-aws_region   = "us-east-1"
-environment  = "prod"
-cluster_name = "distributed-ai-eks"
-vpc_cidr     = "10.0.0.0/16"
-azs          = ["us-east-1a", "us-east-1b", "us-east-1c"]
-```

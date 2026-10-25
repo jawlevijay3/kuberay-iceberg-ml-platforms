@@ -152,13 +152,24 @@ class EntityResolver:
     # JM Comment: EntityResolver actor is pinned to specialized worker nodes using Ray custom resources.
     """
     def __init__(self):
-        # Secure injection via External Secrets Operator (ESO) / AWS Secrets Manager
+        # Secure injection via Secrets Store CSI Driver or Environment
         self.api_key = os.getenv("LLM_API_KEY", "NOT_SET")
         if self.api_key == "NOT_SET":
-            logger.warning("CRITICAL WARNING: LLM_API_KEY not found in environment. Resolution running in mock mode.")
+            # Check Secrets Store CSI Driver volume mount
+            csi_path = "/mnt/secrets-store/LLM_API_KEY"
+            if os.path.exists(csi_path):
+                try:
+                    with open(csi_path, "r", encoding="utf-8") as f:
+                        self.api_key = f.read().strip()
+                    logger.info("Successfully loaded LLM_API_KEY from Secrets Store CSI Driver mount.")
+                except Exception as e:
+                    logger.warning(f"Could not read from Secrets Store CSI mount: {e}")
+
+        if self.api_key == "NOT_SET":
+            logger.warning("CRITICAL WARNING: LLM_API_KEY not found in environment or CSI store. Resolution running in mock mode.")
         else:
             masked_key = self.api_key[:3] + "..." + self.api_key[-2:] if len(self.api_key) > 5 else "***"
-            logger.info(f"LLM_API_KEY successfully authenticated via SecretStore (Key: {masked_key})")
+            logger.info(f"LLM_API_KEY successfully authenticated via Secrets Store CSI Driver (Key: {masked_key})")
             
         self.cache: Dict[str, tuple] = {}
         logger.info("EntityResolver Actor initialized and ready for batch inference.")

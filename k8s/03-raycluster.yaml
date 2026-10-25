@@ -16,7 +16,7 @@ spec:
     serviceAccountName: ray-head-sa
     rayStartParams:
       dashboard-host: '0.0.0.0'
-      num-cpus: '0' # Dedicated to cluster coordination; zero user tasks
+      num-cpus: '0'
       block: 'true'
     template:
       metadata:
@@ -54,7 +54,7 @@ spec:
               sizeLimit: 2Gi
 
   # -----------------------------------------------------------------------
-  # Worker Groups: Decoupled into General Spot Workers & Bottlerocket Resolver
+  # Worker Groups: General Spot Workers & Bottlerocket Resolver (with Secrets Store CSI Driver)
   # -----------------------------------------------------------------------
   workerGroupSpecs:
     # Worker Group 1: General Spot Workers (Parallel Ingestion & Data Tasks)
@@ -65,7 +65,6 @@ spec:
       serviceAccountName: ray-worker-sa
       rayStartParams:
         object-store-memory: '3221225472' # 3 GiB Plasma Object Store
-        # JM Comment: Explicit object spilling configuration to disk/S3
         system-config: '{"object_spilling_config":"{\"type\":\"filesystem\",\"params\":{\"directory\":\"/tmp/ray/spill\"}}"}'
         block: 'true'
       template:
@@ -88,7 +87,6 @@ spec:
               image: rayproject/ray:2.35.0-py310
               imagePullPolicy: IfNotPresent
               lifecycle:
-                # JM Comment: Graceful drain giving 60 seconds to finish tasks and spill objects
                 preStop:
                   exec:
                     command: ["/bin/sh", "-c", "ray stop --grace-period 60"]
@@ -118,16 +116,15 @@ spec:
               emptyDir: {}
 
     # Worker Group 2: Bottlerocket Specialized Resolver Workers (2 CPU, 16 GB RAM)
-    # JM Comment: Dedicated Bottlerocket node pool hosting EntityResolver actor
+    # JM Comment: Pinned to Bottlerocket node pool with Secrets Store CSI Driver volume mount
     - groupName: specialized-resolver-workers
       replicas: 1
       minReplicas: 1
       maxReplicas: 4
       serviceAccountName: ray-worker-sa
       rayStartParams:
-        # JM Comment: Custom Ray resource 'actor_node: 1' enables strict actor affinity
         resources: '"{\"actor_node\": 1}"'
-        object-store-memory: '4294967296' # 4 GiB Object Store
+        object-store-memory: '4294967296'
         block: 'true'
       template:
         metadata:
@@ -161,6 +158,10 @@ spec:
               volumeMounts:
                 - mountPath: /dev/shm
                   name: dshm
+                # JM Comment: Mount path for AWS Secrets Store CSI Driver
+                - mountPath: /mnt/secrets-store
+                  name: secrets-store-inline
+                  readOnly: true
               env:
                 - name: LLM_API_KEY
                   valueFrom:
@@ -174,3 +175,10 @@ spec:
               emptyDir:
                 medium: Memory
                 sizeLimit: 6Gi
+            # JM Comment: CSI volume reading from SecretProviderClass ray-aws-secrets
+            - name: secrets-store-inline
+              csi:
+                driver: secrets-store.csi.k8s.io
+                readOnly: true
+                volumeAttributes:
+                  secretProviderClass: "ray-aws-secrets"
