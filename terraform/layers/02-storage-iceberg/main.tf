@@ -1,4 +1,4 @@
-# JM Comment: Decoupled Layer 02: Storage & Apache Iceberg
+# JM Comment: Decoupled Layer 02: Storage & Apache Iceberg with S3 Remote State
 terraform {
   required_version = ">= 1.5.0"
   required_providers {
@@ -10,6 +10,14 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.6"
     }
+  }
+
+  backend "s3" {
+    bucket         = "odex-terraform-state-file"
+    key            = "layers/02-storage-iceberg/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "odex-terraform-state-lock"
+    encrypt        = true
   }
 }
 

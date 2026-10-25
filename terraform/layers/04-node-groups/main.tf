@@ -1,4 +1,4 @@
-# JM Comment: Decoupled Layer 04: Head (On-Demand), Spot Workers, and Bottlerocket Resolver Node Groups
+# JM Comment: Decoupled Layer 04: Head (On-Demand), Spot Workers, and Bottlerocket Resolver Node Groups with S3 Remote State
 terraform {
   required_version = ">= 1.5.0"
   required_providers {
@@ -6,6 +6,14 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.40"
     }
+  }
+
+  backend "s3" {
+    bucket         = "odex-terraform-state-file"
+    key            = "layers/04-node-groups/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "odex-terraform-state-lock"
+    encrypt        = true
   }
 }
 

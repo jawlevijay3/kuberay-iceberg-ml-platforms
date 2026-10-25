@@ -1,4 +1,4 @@
-# JM Comment: Terraform Version and Provider Locks
+# JM Comment: Terraform Version and Provider Locks with S3 Remote State
 terraform {
   required_version = ">= 1.5.0"
 
@@ -25,12 +25,12 @@ terraform {
     }
   }
 
-  # In production, use remote S3 backend with DynamoDB state locking:
-  # backend "s3" {
-  #   bucket         = "distributed-ai-tf-state-lock"
-  #   key            = "prod/terraform.tfstate"
-  #   region         = "us-east-1"
-  #   dynamodb_table = "terraform-locks"
-  #   encrypt        = true
-  # }
+  # JM Comment: Remote S3 backend with DynamoDB state locking to prevent overrides
+  backend "s3" {
+    bucket         = "odex-terraform-state-file"
+    key            = "prod/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "odex-terraform-state-lock"
+    encrypt        = true
+  }
 }
