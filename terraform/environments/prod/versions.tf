@@ -25,12 +25,11 @@ terraform {
     }
   }
 
-  # JM Comment: Remote S3 backend with DynamoDB state locking to prevent overrides
+  # JM Comment: Remote S3 backend in odex-terraform-state-file (pure S3 state storage)
   backend "s3" {
-    bucket         = "odex-terraform-state-file"
-    key            = "prod/terraform.tfstate"
-    region         = "us-east-1"
-    dynamodb_table = "odex-terraform-state-lock"
-    encrypt        = true
+    bucket  = "odex-terraform-state-file"
+    key     = "prod/terraform.tfstate"
+    region  = "us-east-1"
+    encrypt = true
   }
 }

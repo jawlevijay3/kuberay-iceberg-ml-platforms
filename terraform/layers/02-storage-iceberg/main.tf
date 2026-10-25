@@ -13,11 +13,10 @@ terraform {
   }
 
   backend "s3" {
-    bucket         = "odex-terraform-state-file"
-    key            = "layers/02-storage-iceberg/terraform.tfstate"
-    region         = "us-east-1"
-    dynamodb_table = "odex-terraform-state-lock"
-    encrypt        = true
+    bucket  = "odex-terraform-state-file"
+    key     = "layers/02-storage-iceberg/terraform.tfstate"
+    region  = "us-east-1"
+    encrypt = true
   }
 }
 

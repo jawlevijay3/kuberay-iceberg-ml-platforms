@@ -1,4 +1,4 @@
-# JM Comment: Decoupled Layer 03: Managed EKS Cluster (v1.31) & Zero-Trust IRSA with S3 Remote State
+# JM Comment: Decoupled Layer 03: Managed EKS Cluster (v1.34) & Zero-Trust IRSA with S3 Remote State
 terraform {
   required_version = ">= 1.5.0"
   required_providers {
@@ -13,11 +13,10 @@ terraform {
   }
 
   backend "s3" {
-    bucket         = "odex-terraform-state-file"
-    key            = "layers/03-eks-cluster/terraform.tfstate"
-    region         = "us-east-1"
-    dynamodb_table = "odex-terraform-state-lock"
-    encrypt        = true
+    bucket  = "odex-terraform-state-file"
+    key     = "layers/03-eks-cluster/terraform.tfstate"
+    region  = "us-east-1"
+    encrypt = true
   }
 }
 
