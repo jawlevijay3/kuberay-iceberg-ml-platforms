@@ -101,8 +101,8 @@ definitions:
             check_addon "eks-pod-identity-agent"
             check_addon "aws-secrets-store-csi-driver-provider"
             check_addon "metrics-server"
-          - echo "Verifying Kubernetes Metrics Server service selector..."
-          - kubectl patch svc metrics-server -n kube-system --type='json' -p='[{"op": "replace", "path": "/spec/selector", "value": {"app.kubernetes.io/name": "metrics-server", "app.kubernetes.io/instance": "metrics-server"}}]' || true
+          - |
+            kubectl patch svc metrics-server -n kube-system --type='json' -p='[{"op": "replace", "path": "/spec/selector", "value": {"app.kubernetes.io/name": "metrics-server", "app.kubernetes.io/instance": "metrics-server"}}]' || true
           - echo "Applying Gateway API CRDs..."
           - kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.1.0/standard-install.yaml || true
           - echo "Applying KubeRay CRDs..."
