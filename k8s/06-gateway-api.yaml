@@ -5,7 +5,7 @@ metadata:
   name: ray-gateway-class
 spec:
   controllerName: gateway.envoyproxy.io/gatewayclass-controller
-  description: "GatewayClass for Ray Cluster routing via Envoy / AWS Gateway Controller"
+  description: "Ray Cluster Gateway Routing"
 ---
 # JM Comment: Gateway resource exposing Ray services with modern L7 routing
 apiVersion: gateway.networking.k8s.io/v1

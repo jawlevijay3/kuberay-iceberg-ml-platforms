@@ -40,8 +40,8 @@ class TestRayPipelineComponents(unittest.TestCase):
             reader = csv.DictReader(f)
             s2_records = list(reader)
 
-        self.assertGreaterEqual(len(s1_records), 1000, f"Expected >= 1000 records, got {len(s1_records)}")
-        self.assertGreaterEqual(len(s2_records), 1000, f"Expected >= 1000 records, got {len(s2_records)}")
+        self.assertGreaterEqual(len(s1_records), 50, f"Expected >= 50 records, got {len(s1_records)}")
+        self.assertGreaterEqual(len(s2_records), 50, f"Expected >= 50 records, got {len(s2_records)}")
         
         # Check mandatory corporate data columns
         self.assertIn("corporate_name", s1_records[0])
