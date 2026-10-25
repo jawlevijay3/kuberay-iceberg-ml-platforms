@@ -384,13 +384,34 @@ def train_revenue_model(records: List[Dict[str, Any]]) -> Dict[str, Any]:
         rmse = float(np.sqrt(mean_squared_error(y_test, predictions)))
         r2 = float(r2_score(y_test, predictions))
         
+        # Persist checkpoint directly to S3 Data Lake
+        s3_bucket = os.getenv("ICEBERG_S3_BUCKET", "distributed-ai-lake-d14ec094")
+        checkpoint_key = "model-checkpoints/revenue_model_latest.pkl"
+        checkpoint_uri = f"s3://{s3_bucket}/{checkpoint_key}"
+        try:
+            import boto3
+            import pickle
+            s3 = boto3.client("s3")
+            payload = pickle.dumps({
+                "model": model,
+                "test_r2_score": round(r2, 4),
+                "test_rmse": rmse,
+                "feature_names": ["headcount", "procurement_spend_usd", "supply_chain_risk_score", "operating_cost_usd", "ebitda_usd"],
+                "feature_coefficients": [round(float(c), 3) for c in model.coef_],
+            })
+            s3.put_object(Bucket=s3_bucket, Key=checkpoint_key, Body=payload)
+            logger.info(f"Model checkpoint successfully uploaded to: {checkpoint_uri}")
+        except Exception as e:
+            checkpoint_uri = f"Saved in-memory (S3 upload notice: {e})"
+            logger.warning(f"Could not upload checkpoint to S3: {e}")
+
         metrics = {
             "model_type": "RayTrain Distributed RidgeRegressor",
             "samples": len(X),
             "test_rmse": rmse,
             "test_r2_score": round(r2, 4),
             "feature_coefficients": [round(float(c), 3) for c in model.coef_],
-            "checkpoint_status": "Checkpoint saved to S3 bucket"
+            "checkpoint_status": checkpoint_uri
         }
         logger.info(f"Model Training Results: R² Score = {metrics['test_r2_score']}, RMSE = ${rmse:,.2f}")
         return metrics
