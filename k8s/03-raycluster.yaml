@@ -16,12 +16,17 @@ spec:
   headGroupSpec:
     rayStartParams:
       dashboard-host: '0.0.0.0'
+      metrics-export-port: '44217'
       num-cpus: '0'
       block: 'true'
     template:
       metadata:
         labels:
           ray.io/node-type: head
+        annotations:
+          prometheus.io/scrape: "true"
+          prometheus.io/port: "44217"
+          prometheus.io/path: "/metrics"
       spec:
         serviceAccountName: ray-head-sa
         nodeSelector:
@@ -48,6 +53,8 @@ spec:
                 name: dashboard
               - containerPort: 10001
                 name: client
+              - containerPort: 44217
+                name: metrics
         volumes:
           - name: dshm
             emptyDir:
@@ -64,6 +71,7 @@ spec:
       minReplicas: 1
       maxReplicas: 8
       rayStartParams:
+        metrics-export-port: '44217'
         object-store-memory: '2147483648' # 2 GiB Plasma Object Store
         system-config: '{"object_spilling_config":"{\"type\":\"filesystem\",\"params\":{\"directory\":\"/tmp/ray/spill\"}}"}'
         block: 'true'
@@ -73,6 +81,10 @@ spec:
             ray.io/node-type: worker
             workload: general
             lifecycle: Ec2Spot
+          annotations:
+            prometheus.io/scrape: "true"
+            prometheus.io/port: "44217"
+            prometheus.io/path: "/metrics"
         spec:
           serviceAccountName: ray-worker-sa
           nodeSelector:
@@ -98,6 +110,9 @@ spec:
                 requests:
                   cpu: '800m'
                   memory: '3Gi'
+              ports:
+                - containerPort: 44217
+                  name: metrics
               volumeMounts:
                 - mountPath: /dev/shm
                   name: dshm
@@ -117,13 +132,12 @@ spec:
               emptyDir: {}
 
     # Worker Group 2: Bottlerocket Specialized Resolver Workers (2 CPU, 16 GB RAM)
-    # JM Comment: Requests sized conservatively (800m CPU, 4Gi RAM) so pod + init container + daemonsets
-    # fit safely within the 2 vCPU allocatable limit of r5.large Bottlerocket nodes.
     - groupName: specialized-resolver-workers
       replicas: 1
       minReplicas: 1
       maxReplicas: 4
       rayStartParams:
+        metrics-export-port: '44217'
         resources: '"{\"actor_node\": 1}"'
         object-store-memory: '2147483648' # 2 GiB
         block: 'true'
@@ -132,6 +146,10 @@ spec:
           labels:
             ray.io/node-type: specialized-worker
             workload: entity-resolver
+          annotations:
+            prometheus.io/scrape: "true"
+            prometheus.io/port: "44217"
+            prometheus.io/path: "/metrics"
         spec:
           serviceAccountName: ray-worker-sa
           nodeSelector:
@@ -157,10 +175,12 @@ spec:
                 requests:
                   cpu: '800m'
                   memory: '4Gi'
+              ports:
+                - containerPort: 44217
+                  name: metrics
               volumeMounts:
                 - mountPath: /dev/shm
                   name: dshm
-                # JM Comment: Mount path for AWS Secrets Store CSI Driver
                 - mountPath: /mnt/secrets-store
                   name: secrets-store-inline
                   readOnly: true
@@ -177,7 +197,6 @@ spec:
               emptyDir:
                 medium: Memory
                 sizeLimit: 2Gi
-            # JM Comment: CSI volume reading from SecretProviderClass ray-aws-secrets
             - name: secrets-store-inline
               csi:
                 driver: secrets-store.csi.k8s.io

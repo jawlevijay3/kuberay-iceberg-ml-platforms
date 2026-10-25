@@ -1,6 +1,7 @@
 # JM Comment: Bitbucket Pipelines CI/CD for Distributed AI Foundation Ray Architecture
 # Implements safe manual approval gates (trigger: manual), segmented provisioning order,
-# dynamic addon health checks (ACTIVE/DEGRADED), Secrets Store CSI Driver, and RayJob orchestration.
+# dynamic addon health checks (ACTIVE/DEGRADED), Metrics Server, Prometheus & Grafana monitoring,
+# segregated EKS-level workload teardown before Terraform destroy, and RayJob orchestration.
 # Per operational requirement: NO automatic pipelines on push/PR; ALL workflows run via manual custom triggers.
 
 image: atlassian/default-image:4
@@ -69,7 +70,7 @@ definitions:
     # Dynamic Addon Health Check & Cluster Prerequisites
     # -------------------------------------------------------------------------
     - step: &check-prerequisites
-        name: "Verify Addon Status (ACTIVE/DEGRADED) & Cluster Prerequisites"
+        name: "Verify Addon Status & Deploy Prerequisites and Monitoring Stack"
         image: amazon/aws-cli:2.15.15
         script:
           - curl -LO "https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl"
@@ -106,16 +107,18 @@ definitions:
           - kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.1.0/standard-install.yaml || true
           - echo "Applying KubeRay CRDs..."
           - kubectl apply -k "github.com/ray-project/kuberay/ray-operator/config/crd?ref=v1.1.1" || true
-          - echo "Applying Secrets Store CSI Driver CRDs and AWS Provider..."
+          - echo "Applying Secrets Store CSI Driver CRDs and Provider..."
           - kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/main/charts/secrets-store-csi-driver/crds/secrets-store.csi.x-k8s.io_secretproviderclasses.yaml || true
           - kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/main/charts/secrets-store-csi-driver/crds/secrets-store.csi.x-k8s.io_secretproviderclasspodstatuses.yaml || true
           - kubectl apply -f https://raw.githubusercontent.com/aws/secrets-store-csi-driver-provider-aws/main/deployment/aws-provider-installer.yaml || true
-          - echo "Applying Namespace, SecretProviderClass, and IRSA..."
+          - echo "Applying Namespaces, Secrets, IRSA, and Gateway API..."
           - kubectl apply -f k8s/00-namespace.yaml
           - kubectl apply -f k8s/01-secrets.yaml
           - kubectl apply -f k8s/02-irsa-serviceaccount.yaml
           - kubectl apply -f k8s/06-gateway-api.yaml
-          - echo "Cluster prerequisites, Metrics Server, Secrets Store CSI Driver, and addons verified successfully."
+          - echo "Applying Prometheus and Grafana Monitoring Stack..."
+          - kubectl apply -f k8s/07-monitoring.yaml
+          - echo "Prerequisites, Metrics Server, Prometheus & Grafana verified successfully."
 
     # -------------------------------------------------------------------------
     # Deploy RayCluster & RayJob CRD
@@ -135,6 +138,52 @@ definitions:
           - kubectl apply -f k8s/04-rayjob.yaml
           - echo "RayJob submitted successfully."
           - kubectl get rayjob -n kuberay || true
+
+    # -------------------------------------------------------------------------
+    # Clean Teardown of All Kubernetes Workloads & Cloud LoadBalancers
+    # JM Comment: Executed BEFORE Terraform destroy to release AWS ENIs & ELBs
+    # -------------------------------------------------------------------------
+    - step: &teardown-k8s-workloads
+        name: "Teardown EKS Workloads (Gateway LoadBalancers, Ray, Monitoring Stack)"
+        image: amazon/aws-cli:2.15.15
+        script:
+          - curl -LO "https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl"
+          - chmod +x kubectl && mv kubectl /usr/local/bin/
+          - export TARGET_CLUSTER=${EXISTING_EKS_CLUSTER_NAME:-${EKS_CLUSTER_NAME:-"distributed-ai-eks"}}
+          - export AWS_REGION=${AWS_DEFAULT_REGION:-"us-east-1"}
+          - echo "Connecting to EKS Cluster $TARGET_CLUSTER in $AWS_REGION..."
+          - aws eks update-kubeconfig --region $AWS_REGION --name $TARGET_CLUSTER || echo "Cluster may already be unreachable or removed"
+          - echo "=== [Stage 1: Deleting Gateway API & Cloud LoadBalancers to release AWS ENIs] ==="
+          - kubectl delete httproute --all -n kuberay --ignore-not-found=true --timeout=30s || true
+          - kubectl delete gateway --all -n kuberay --ignore-not-found=true --timeout=60s || true
+          - kubectl delete gatewayclass --all --ignore-not-found=true --timeout=30s || true
+          - echo "Checking and deleting any Service of type LoadBalancer across all namespaces..."
+          - |
+            kubectl get svc --all-namespaces -o jsonpath='{range .items[?(@.spec.type=="LoadBalancer")]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null | while read ns svc; do
+              if [ -n "$svc" ]; then
+                echo "Deleting LoadBalancer service $svc in namespace $ns..."
+                kubectl delete svc "$svc" -n "$ns" --timeout=60s || true
+              fi
+            done
+          - echo "=== [Stage 2: Deleting Prometheus & Grafana Monitoring Stack] ==="
+          - kubectl delete -f k8s/07-monitoring.yaml --ignore-not-found=true --timeout=60s || true
+          - kubectl delete namespace monitoring --ignore-not-found=true --timeout=60s || true
+          - echo "=== [Stage 3: Deleting RayJobs & RayClusters] ==="
+          - kubectl delete rayjob --all -n kuberay --ignore-not-found=true --timeout=30s || true
+          - kubectl delete raycluster --all -n kuberay --ignore-not-found=true --timeout=60s || true
+          - kubectl patch rayjob corporate-data-pipeline-job -n kuberay -p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true
+          - kubectl delete pod -l ray.io/node-type=worker -n kuberay --ignore-not-found=true || true
+          - kubectl delete pod -l ray.io/node-type=head -n kuberay --ignore-not-found=true || true
+          - echo "=== [Stage 4: Deleting Remaining Kubernetes Resources & Namespaces] ==="
+          - kubectl delete -f k8s/06-gateway-api.yaml --ignore-not-found=true --timeout=30s || true
+          - kubectl delete -f k8s/04-rayjob.yaml --ignore-not-found=true --timeout=30s || true
+          - kubectl delete -f k8s/03-raycluster.yaml --ignore-not-found=true --timeout=30s || true
+          - kubectl delete -f k8s/02-irsa-serviceaccount.yaml --ignore-not-found=true --timeout=30s || true
+          - kubectl delete -f k8s/01-secrets.yaml --ignore-not-found=true --timeout=30s || true
+          - kubectl delete namespace kuberay --ignore-not-found=true --timeout=60s || true
+          - echo "Waiting 20 seconds for AWS Load Balancer Elastic Network Interfaces (ENIs) to cleanly detach..."
+          - sleep 20
+          - echo "Kubernetes in-cluster resources, Cloud LoadBalancers, Ray, and Monitoring cleaned up successfully."
 
 pipelines:
   # ---------------------------------------------------------------------------
@@ -159,6 +208,7 @@ pipelines:
             - terraform import module.eks_addons.aws_eks_addon.coredns ${EKS_CLUSTER_NAME}:coredns || true
             - terraform import module.eks_addons.aws_eks_addon.aws_ebs_csi_driver ${EKS_CLUSTER_NAME}:aws-ebs-csi-driver || true
             - terraform import module.eks_addons.aws_eks_addon.aws_secrets_store_csi_driver_provider ${EKS_CLUSTER_NAME}:aws-secrets-store-csi-driver-provider || true
+            - terraform import module.eks_addons.aws_eks_addon.metrics_server ${EKS_CLUSTER_NAME}:metrics-server || true
             - terraform plan -out=tfplan
           artifacts:
             - terraform/environments/prod/tfplan
@@ -174,6 +224,7 @@ pipelines:
             - terraform import module.eks_addons.aws_eks_addon.coredns ${EKS_CLUSTER_NAME}:coredns || true
             - terraform import module.eks_addons.aws_eks_addon.aws_ebs_csi_driver ${EKS_CLUSTER_NAME}:aws-ebs-csi-driver || true
             - terraform import module.eks_addons.aws_eks_addon.aws_secrets_store_csi_driver_provider ${EKS_CLUSTER_NAME}:aws-secrets-store-csi-driver-provider || true
+            - terraform import module.eks_addons.aws_eks_addon.metrics_server ${EKS_CLUSTER_NAME}:metrics-server || true
             - terraform apply tfplan
       - step:
           name: "Verify: Automated AWS Infrastructure Health Check"
@@ -187,9 +238,10 @@ pipelines:
             - echo "Verification completed."
 
     # -------------------------------------------------------------------------
-    # Custom Option 2: Safe Terraform Destroy (Manual Approval Required)
+    # Custom Option 2: Safe Segmented Teardown (EKS Workloads FIRST -> Terraform Destroy)
     # -------------------------------------------------------------------------
     2-terraform-destroy-infra:
+      - step: *teardown-k8s-workloads
       - step:
           name: "Plan Teardown: Preview Resources to Destroy"
           image: hashicorp/terraform:1.9.4
@@ -247,12 +299,14 @@ pipelines:
             - kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/main/charts/secrets-store-csi-driver/crds/secrets-store.csi.x-k8s.io_secretproviderclasses.yaml || true
             - kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/main/charts/secrets-store-csi-driver/crds/secrets-store.csi.x-k8s.io_secretproviderclasspodstatuses.yaml || true
             - kubectl apply -f https://raw.githubusercontent.com/aws/secrets-store-csi-driver-provider-aws/main/deployment/aws-provider-installer.yaml || true
-            - echo "Applying Namespace, SecretProviderClass, and IRSA..."
+            - echo "Applying Namespaces, Secrets, IRSA, and Gateway API..."
             - kubectl apply -f k8s/00-namespace.yaml
             - kubectl apply -f k8s/01-secrets.yaml
             - kubectl apply -f k8s/02-irsa-serviceaccount.yaml
             - kubectl apply -f k8s/06-gateway-api.yaml
-            - echo "Existing cluster prerequisites verified."
+            - echo "Applying Prometheus & Grafana Monitoring Stack..."
+            - kubectl apply -f k8s/07-monitoring.yaml
+            - echo "Existing cluster prerequisites and monitoring verified."
       - step: *deploy-rayjob
 
     # -------------------------------------------------------------------------
@@ -309,3 +363,9 @@ pipelines:
       - step: *check-prerequisites
       - step: *deploy-rayjob
 
+    # -------------------------------------------------------------------------
+    # Custom Option 7: Standalone EKS-Level Workload Teardown Only
+    # JM Comment: Deletes Ray, Cloud LoadBalancers, and Monitoring without destroying VPC/EKS
+    # -------------------------------------------------------------------------
+    7-teardown-eks-workloads-only:
+      - step: *teardown-k8s-workloads

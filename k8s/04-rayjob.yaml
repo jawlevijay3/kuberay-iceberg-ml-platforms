@@ -35,6 +35,11 @@ spec:
         metrics-export-port: '44217'
         num-cpus: '0'
       template:
+        metadata:
+          annotations:
+            prometheus.io/scrape: "true"
+            prometheus.io/port: "44217"
+            prometheus.io/path: "/metrics"
         spec:
           serviceAccountName: ray-head-sa
           nodeSelector:
@@ -42,6 +47,15 @@ spec:
           containers:
             - name: ray-head
               image: 693880751318.dkr.ecr.us-east-1.amazonaws.com/distributed-ai-ray:latest
+              ports:
+                - containerPort: 6379
+                  name: gcs
+                - containerPort: 8265
+                  name: dashboard
+                - containerPort: 10001
+                  name: client
+                - containerPort: 44217
+                  name: metrics
               resources:
                 limits:
                   cpu: '1500m'
@@ -55,8 +69,14 @@ spec:
         minReplicas: 1
         maxReplicas: 8
         rayStartParams:
+          metrics-export-port: '44217'
           resources: '"{\"actor_node\": 1}"'
         template:
+          metadata:
+            annotations:
+              prometheus.io/scrape: "true"
+              prometheus.io/port: "44217"
+              prometheus.io/path: "/metrics"
           spec:
             serviceAccountName: ray-worker-sa
             nodeSelector:
@@ -69,6 +89,9 @@ spec:
             containers:
               - name: ray-worker
                 image: 693880751318.dkr.ecr.us-east-1.amazonaws.com/distributed-ai-ray:latest
+                ports:
+                  - containerPort: 44217
+                    name: metrics
                 env:
                   - name: LLM_API_KEY
                     valueFrom:
