@@ -1,4 +1,5 @@
 # JM Comment: Decoupled Multi-Layer Production Terraform Architecture for Ray AI Foundation
+# Strict provisioning order: VPC -> EKS -> Node Groups -> CoreDNS/EBS CSI Add-ons -> KubeRay/Gateway
 provider "aws" {
   region = var.aws_region
 
@@ -50,6 +51,7 @@ provider "helm" {
 }
 
 # 3. Decoupled Node Pools: Head (On-Demand), Spot Workers, and Bottlerocket Resolver (2 CPU 16GB)
+# JM Comment: Node groups MUST be provisioned BEFORE CoreDNS / EBS CSI to provide compute capacity
 module "node_pools" {
   source       = "../../modules/node_pools"
   cluster_name = module.eks.cluster_name
@@ -58,14 +60,24 @@ module "node_pools" {
   depends_on   = [module.eks]
 }
 
-# 4. Storage & Apache Iceberg Layer (S3, KMS, AWS Glue Catalog)
+# 4. Post-NodeGroup EKS Add-ons (CoreDNS & AWS EBS CSI Driver)
+# JM Comment: Provisioned strictly AFTER node pools to eliminate 15-minute pending hangs
+module "eks_addons" {
+  source            = "../../modules/eks_addons"
+  cluster_name      = module.eks.cluster_name
+  oidc_provider_arn = module.eks.oidc_provider_arn
+  oidc_provider_url = module.eks.oidc_provider_url
+  depends_on        = [module.node_pools]
+}
+
+# 5. Storage & Apache Iceberg Layer (S3, KMS, AWS Glue Catalog)
 module "s3_iceberg" {
   source             = "../../modules/s3_iceberg"
   bucket_name_prefix = "distributed-ai"
   environment        = var.environment
 }
 
-# 5. Zero-Trust Identity Layer (AWS IRSA for Ray Pods)
+# 6. Zero-Trust Identity Layer (AWS IRSA for Ray Pods)
 module "iam_irsa" {
   source               = "../../modules/iam_irsa"
   cluster_name         = module.eks.cluster_name
@@ -78,8 +90,8 @@ module "iam_irsa" {
   service_account_name = "ray-worker-sa"
 }
 
-# 6. KubeRay Operator and Gateway API Controller Layer
+# 7. KubeRay Operator, Gateway API, and Secrets Store CSI Driver Layer
 module "kuberay_gateway" {
   source     = "../../modules/kuberay"
-  depends_on = [module.node_pools]
+  depends_on = [module.eks_addons]
 }

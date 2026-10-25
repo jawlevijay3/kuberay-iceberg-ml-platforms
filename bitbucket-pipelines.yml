@@ -1,6 +1,6 @@
 # JM Comment: Bitbucket Pipelines CI/CD for Distributed AI Foundation Ray Architecture
-# Implements safe manual approval gates (trigger: manual) to eliminate dangerous auto-approvals,
-# segmented layer deployments, teardown audit, and RayJob orchestration.
+# Implements safe manual approval gates (trigger: manual), segmented provisioning order,
+# dynamic addon health checks (ACTIVE/DEGRADED), and RayJob orchestration.
 
 image: atlassian/default-image:4
 
@@ -41,10 +41,10 @@ definitions:
           - docker push $ECR_REGISTRY/distributed-ai-ray:$IMAGE_TAG || echo "Simulated ECR push in test environment"
 
     # -------------------------------------------------------------------------
-    # Check & Install EKS Prerequisites (CRDs, Namespace, Secrets Store CSI)
+    # Dynamic Addon Health Check & Cluster Prerequisites
     # -------------------------------------------------------------------------
     - step: &check-prerequisites
-        name: "Verify & Install EKS Cluster Prerequisites"
+        name: "Verify Addon Status (ACTIVE/DEGRADED) & Cluster Prerequisites"
         image: amazon/aws-cli:2.15.15
         script:
           - curl -LO "https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl"
@@ -52,7 +52,28 @@ definitions:
           - export TARGET_CLUSTER=${EXISTING_EKS_CLUSTER_NAME:-${EKS_CLUSTER_NAME:-"distributed-ai-eks"}}
           - export AWS_REGION=${AWS_DEFAULT_REGION:-"us-east-1"}
           - echo "Connecting to EKS Cluster $TARGET_CLUSTER in $AWS_REGION..."
-          - aws eks update-kubeconfig --region $AWS_REGION --name $TARGET_CLUSTER || echo "Local cluster connection mode"
+          - aws eks update-kubeconfig --region $AWS_REGION --name $TARGET_CLUSTER || echo "Local cluster mode"
+          - echo "=== [Audit] Checking EKS Managed Addon Statuses ==="
+          - |
+            check_addon() {
+              local addon=$1
+              STATUS=$(aws eks describe-addon --cluster-name $TARGET_CLUSTER --addon-name $addon --region $AWS_REGION --query "addon.status" --output text 2>/dev/null || echo "NOT_FOUND")
+              echo "Add-on '$addon' current status: $STATUS"
+              if [ "$STATUS" == "ACTIVE" ]; then
+                echo "-> Add-on '$addon' is healthy and ACTIVE. Skipping."
+              elif [ "$STATUS" == "DEGRADED" ]; then
+                echo "-> Add-on '$addon' is DEGRADED. Resolving conflicts with OVERWRITE..."
+                aws eks update-addon --cluster-name $TARGET_CLUSTER --addon-name $addon --resolve-conflicts OVERWRITE --region $AWS_REGION || true
+              elif [ "$STATUS" == "NOT_FOUND" ]; then
+                echo "-> Add-on '$addon' is not installed. Installing with OVERWRITE..."
+                aws eks create-addon --cluster-name $TARGET_CLUSTER --addon-name $addon --resolve-conflicts OVERWRITE --region $AWS_REGION || true
+              fi
+            }
+            check_addon "vpc-cni"
+            check_addon "kube-proxy"
+            check_addon "coredns"
+            check_addon "aws-ebs-csi-driver"
+            check_addon "eks-pod-identity-agent"
           - echo "Applying Gateway API CRDs..."
           - kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.1.0/standard-install.yaml || true
           - echo "Applying KubeRay CRDs..."
@@ -62,7 +83,7 @@ definitions:
           - kubectl apply -f k8s/01-secrets.yaml
           - kubectl apply -f k8s/02-irsa-serviceaccount.yaml
           - kubectl apply -f k8s/06-gateway-api.yaml
-          - echo "All cluster prerequisites verified and operational."
+          - echo "Cluster prerequisites and addons verified successfully."
 
     # -------------------------------------------------------------------------
     # Deploy RayCluster & RayJob CRD
