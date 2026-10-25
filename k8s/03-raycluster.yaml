@@ -1,4 +1,5 @@
 # JM Comment: Production RayCluster CRD with Head, General Spot Workers, and Bottlerocket Resolver Workers
+# Sized conservatively to fit within EKS node allocatable capacity (including init containers & system overhead)
 apiVersion: ray.io/v1
 kind: RayCluster
 metadata:
@@ -32,11 +33,11 @@ spec:
             imagePullPolicy: IfNotPresent
             resources:
               limits:
-                cpu: '2'
-                memory: '4Gi'
+                cpu: '1500m'
+                memory: '3Gi'
               requests:
-                cpu: '1'
-                memory: '2Gi'
+                cpu: '500m'
+                memory: '1500Mi'
             volumeMounts:
               - mountPath: /dev/shm
                 name: dshm
@@ -63,7 +64,7 @@ spec:
       minReplicas: 1
       maxReplicas: 8
       rayStartParams:
-        object-store-memory: '3221225472' # 3 GiB Plasma Object Store
+        object-store-memory: '2147483648' # 2 GiB Plasma Object Store
         system-config: '{"object_spilling_config":"{\"type\":\"filesystem\",\"params\":{\"directory\":\"/tmp/ray/spill\"}}"}'
         block: 'true'
       template:
@@ -92,11 +93,11 @@ spec:
                     command: ["/bin/sh", "-c", "ray stop --grace-period 60"]
               resources:
                 limits:
-                  cpu: '2'
-                  memory: '8Gi'
-                requests:
                   cpu: '1500m'
                   memory: '6Gi'
+                requests:
+                  cpu: '800m'
+                  memory: '3Gi'
               volumeMounts:
                 - mountPath: /dev/shm
                   name: dshm
@@ -111,19 +112,20 @@ spec:
             - name: dshm
               emptyDir:
                 medium: Memory
-                sizeLimit: 4Gi
+                sizeLimit: 2Gi
             - name: ray-spill-storage
               emptyDir: {}
 
     # Worker Group 2: Bottlerocket Specialized Resolver Workers (2 CPU, 16 GB RAM)
-    # JM Comment: Pinned to Bottlerocket node pool with Secrets Store CSI Driver volume mount
+    # JM Comment: Requests sized conservatively (800m CPU, 4Gi RAM) so pod + init container + daemonsets
+    # fit safely within the 2 vCPU allocatable limit of r5.large Bottlerocket nodes.
     - groupName: specialized-resolver-workers
       replicas: 1
       minReplicas: 1
       maxReplicas: 4
       rayStartParams:
         resources: '"{\"actor_node\": 1}"'
-        object-store-memory: '4294967296'
+        object-store-memory: '2147483648' # 2 GiB
         block: 'true'
       template:
         metadata:
@@ -150,11 +152,11 @@ spec:
                     command: ["/bin/sh", "-c", "ray stop --grace-period 60"]
               resources:
                 limits:
-                  cpu: '2'
-                  memory: '14Gi'
+                  cpu: '1500m'
+                  memory: '8Gi'
                 requests:
-                  cpu: '1800m'
-                  memory: '10Gi'
+                  cpu: '800m'
+                  memory: '4Gi'
               volumeMounts:
                 - mountPath: /dev/shm
                   name: dshm
@@ -174,7 +176,7 @@ spec:
             - name: dshm
               emptyDir:
                 medium: Memory
-                sizeLimit: 6Gi
+                sizeLimit: 2Gi
             # JM Comment: CSI volume reading from SecretProviderClass ray-aws-secrets
             - name: secrets-store-inline
               csi:
