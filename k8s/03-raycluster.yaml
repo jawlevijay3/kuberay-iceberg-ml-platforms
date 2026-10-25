@@ -73,7 +73,6 @@ spec:
       rayStartParams:
         metrics-export-port: '44217'
         object-store-memory: '2147483648' # 2 GiB Plasma Object Store
-        system-config: '{"object_spilling_config":"{\"type\":\"filesystem\",\"params\":{\"directory\":\"/tmp/ray/spill\"}}"}'
         block: 'true'
       template:
         metadata:
