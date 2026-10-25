@@ -42,6 +42,12 @@ resource "aws_eks_cluster" "eks" {
     endpoint_public_access  = true
   }
 
+  # JM Comment: EKS Access Config - Source authenticated IAM principals from both EKS access entry APIs and aws-auth ConfigMap
+  access_config {
+    authentication_mode                         = "API_AND_CONFIG_MAP"
+    bootstrap_cluster_creator_admin_permissions = true
+  }
+
   enabled_cluster_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
 
   depends_on = [

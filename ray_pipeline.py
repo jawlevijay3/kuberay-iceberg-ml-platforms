@@ -152,18 +152,32 @@ class EntityResolver:
     # JM Comment: EntityResolver actor is pinned to specialized worker nodes using Ray custom resources.
     """
     def __init__(self):
+        def _extract_key(val: str) -> str:
+            if not val or val == "NOT_SET":
+                return "NOT_SET"
+            try:
+                import json
+                parsed = json.loads(val)
+                if isinstance(parsed, dict):
+                    return parsed.get("api_key") or parsed.get("LLM_API_KEY") or parsed.get("apiKey") or list(parsed.values())[0]
+                return str(parsed)
+            except Exception:
+                return val.strip()
+
         # Secure injection via Secrets Store CSI Driver or Environment
-        self.api_key = os.getenv("LLM_API_KEY", "NOT_SET")
-        if self.api_key == "NOT_SET":
+        raw_key = os.getenv("LLM_API_KEY", "NOT_SET")
+        if raw_key == "NOT_SET":
             # Check Secrets Store CSI Driver volume mount
             csi_path = "/mnt/secrets-store/LLM_API_KEY"
             if os.path.exists(csi_path):
                 try:
                     with open(csi_path, "r", encoding="utf-8") as f:
-                        self.api_key = f.read().strip()
+                        raw_key = f.read().strip()
                     logger.info("Successfully loaded LLM_API_KEY from Secrets Store CSI Driver mount.")
                 except Exception as e:
                     logger.warning(f"Could not read from Secrets Store CSI mount: {e}")
+
+        self.api_key = _extract_key(raw_key)
 
         if self.api_key == "NOT_SET":
             logger.warning("CRITICAL WARNING: LLM_API_KEY not found in environment or CSI store. Resolution running in mock mode.")
