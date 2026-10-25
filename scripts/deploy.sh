@@ -24,13 +24,17 @@ cd ../../..
 echo "[3/5] Updating Local Kubeconfig..."
 # aws eks --region "$REGION" update-kubeconfig --name "$CLUSTER_NAME"
 
-echo "[4/5] Applying Kubernetes Resources..."
+echo "[4/5] Applying Kubernetes Resources & CRDs..."
+kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.1.0/standard-install.yaml || true
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/main/charts/secrets-store-csi-driver/crds/secrets-store.csi.x-k8s.io_secretproviderclasses.yaml || true
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/main/charts/secrets-store-csi-driver/crds/secrets-store.csi.x-k8s.io_secretproviderclasspodstatuses.yaml || true
+kubectl apply -f https://raw.githubusercontent.com/aws/secrets-store-csi-driver-provider-aws/main/deployment/aws-provider-installer.yaml || true
+
 kubectl apply -f k8s/00-namespace.yaml
 kubectl apply -f k8s/01-secrets.yaml
 kubectl apply -f k8s/02-irsa-serviceaccount.yaml
 kubectl apply -f k8s/03-raycluster.yaml
-kubectl apply -f k8s/05-prometheus-monitoring.yaml
-kubectl apply -f k8s/06-ray-dashboard-ingress.yaml
+kubectl apply -f k8s/06-gateway-api.yaml
 
 echo "[5/5] Submitting RayJob to Cluster..."
 kubectl apply -f k8s/04-rayjob.yaml

@@ -74,6 +74,19 @@ resource "aws_eks_addon" "aws_ebs_csi_driver" {
   ]
 }
 
+# 4. JM Comment: AWS Secrets Store CSI Driver Provider Managed Add-on
+resource "aws_eks_addon" "aws_secrets_store_csi_driver_provider" {
+  cluster_name                = var.cluster_name
+  addon_name                  = "aws-secrets-store-csi-driver-provider"
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "PRESERVE"
+
+  depends_on = [
+    aws_eks_addon.coredns,
+    aws_eks_addon.aws_ebs_csi_driver
+  ]
+}
+
 output "ebs_csi_role_arn" {
   value = aws_iam_role.ebs_csi_role.arn
 }
@@ -85,3 +98,8 @@ output "coredns_addon_arn" {
 output "ebs_csi_addon_arn" {
   value = aws_eks_addon.aws_ebs_csi_driver.arn
 }
+
+output "secrets_store_csi_addon_arn" {
+  value = aws_eks_addon.aws_secrets_store_csi_driver_provider.arn
+}
+

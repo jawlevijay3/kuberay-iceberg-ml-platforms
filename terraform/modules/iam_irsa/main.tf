@@ -34,7 +34,7 @@ resource "aws_iam_role" "ray_irsa_role" {
 
   tags = {
     Name    = "${var.cluster_name}-ray-pod-role"
-    Purpose = "Ray Zero-Trust Pod Access to S3, KMS, and Glue Iceberg"
+    Purpose = "Ray Zero-Trust Pod Access to S3 KMS and Glue Iceberg"
   }
 }
 

@@ -1,6 +1,7 @@
 # JM Comment: Bitbucket Pipelines CI/CD for Distributed AI Foundation Ray Architecture
 # Implements safe manual approval gates (trigger: manual), segmented provisioning order,
-# dynamic addon health checks (ACTIVE/DEGRADED), and RayJob orchestration.
+# dynamic addon health checks (ACTIVE/DEGRADED), Secrets Store CSI Driver, and RayJob orchestration.
+# Per operational requirement: NO automatic pipelines on push/PR; ALL workflows run via manual custom triggers.
 
 image: atlassian/default-image:4
 
@@ -65,8 +66,7 @@ definitions:
                 echo "-> Add-on '$addon' is DEGRADED. Resolving conflicts with OVERWRITE..."
                 aws eks update-addon --cluster-name $TARGET_CLUSTER --addon-name $addon --resolve-conflicts OVERWRITE --region $AWS_REGION || true
               elif [ "$STATUS" == "NOT_FOUND" ]; then
-                echo "-> Add-on '$addon' is not installed. Installing with OVERWRITE..."
-                aws eks create-addon --cluster-name $TARGET_CLUSTER --addon-name $addon --resolve-conflicts OVERWRITE --region $AWS_REGION || true
+                echo "-> Add-on '$addon' is not installed yet. Managed by Terraform layer."
               fi
             }
             check_addon "vpc-cni"
@@ -74,16 +74,21 @@ definitions:
             check_addon "coredns"
             check_addon "aws-ebs-csi-driver"
             check_addon "eks-pod-identity-agent"
+            check_addon "aws-secrets-store-csi-driver-provider"
           - echo "Applying Gateway API CRDs..."
           - kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.1.0/standard-install.yaml || true
           - echo "Applying KubeRay CRDs..."
           - kubectl apply -k "github.com/ray-project/kuberay/ray-operator/config/crd?ref=v1.1.1" || true
+          - echo "Applying Secrets Store CSI Driver CRDs and AWS Provider..."
+          - kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/main/charts/secrets-store-csi-driver/crds/secrets-store.csi.x-k8s.io_secretproviderclasses.yaml || true
+          - kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/main/charts/secrets-store-csi-driver/crds/secrets-store.csi.x-k8s.io_secretproviderclasspodstatuses.yaml || true
+          - kubectl apply -f https://raw.githubusercontent.com/aws/secrets-store-csi-driver-provider-aws/main/deployment/aws-provider-installer.yaml || true
           - echo "Applying Namespace, SecretProviderClass, and IRSA..."
           - kubectl apply -f k8s/00-namespace.yaml
           - kubectl apply -f k8s/01-secrets.yaml
           - kubectl apply -f k8s/02-irsa-serviceaccount.yaml
           - kubectl apply -f k8s/06-gateway-api.yaml
-          - echo "Cluster prerequisites and addons verified successfully."
+          - echo "Cluster prerequisites, Secrets Store CSI Driver, and addons verified successfully."
 
     # -------------------------------------------------------------------------
     # Deploy RayCluster & RayJob CRD
@@ -106,30 +111,11 @@ definitions:
 
 pipelines:
   # ---------------------------------------------------------------------------
-  # Default PR and Branch Pipelines
+  # JM Comment: AUTOMATIC PIPELINES ARE DISABLED
+  # No pipeline runs on commit, branch push, or pull-request.
+  # ALL actions must be explicitly initiated via manual custom pipeline selection.
   # ---------------------------------------------------------------------------
-  pull-requests:
-    '**':
-      - step: *unit-tests
-      - step:
-          name: "Terraform Format & Syntax Validation"
-          image: hashicorp/terraform:1.9.4
-          script:
-            - terraform fmt -check -recursive terraform/
-            - cd terraform/environments/prod
-            - terraform init -backend=false
-            - terraform validate
 
-  branches:
-    main:
-      - step: *unit-tests
-      - step: *build-and-push
-      - step: *check-prerequisites
-      - step: *deploy-rayjob
-
-  # ---------------------------------------------------------------------------
-  # Custom Pipelines (Selectable in Bitbucket UI)
-  # ---------------------------------------------------------------------------
   custom:
     # -------------------------------------------------------------------------
     # Custom Option 1: Safe Terraform Deployment (Plan -> Manual Approval -> Apply)
@@ -141,6 +127,11 @@ pipelines:
           script:
             - cd terraform/environments/prod
             - terraform init
+            - export EKS_CLUSTER_NAME=${EKS_CLUSTER_NAME:-"distributed-ai-eks"}
+            - echo "Syncing pre-existing EKS addons into Terraform state if present to avoid 409 ResourceInUseException..."
+            - terraform import module.eks_addons.aws_eks_addon.coredns ${EKS_CLUSTER_NAME}:coredns || true
+            - terraform import module.eks_addons.aws_eks_addon.aws_ebs_csi_driver ${EKS_CLUSTER_NAME}:aws-ebs-csi-driver || true
+            - terraform import module.eks_addons.aws_eks_addon.aws_secrets_store_csi_driver_provider ${EKS_CLUSTER_NAME}:aws-secrets-store-csi-driver-provider || true
             - terraform plan -out=tfplan
           artifacts:
             - terraform/environments/prod/tfplan
@@ -151,6 +142,11 @@ pipelines:
           script:
             - cd terraform/environments/prod
             - terraform init
+            - export EKS_CLUSTER_NAME=${EKS_CLUSTER_NAME:-"distributed-ai-eks"}
+            - echo "Ensuring existing addons are imported before apply..."
+            - terraform import module.eks_addons.aws_eks_addon.coredns ${EKS_CLUSTER_NAME}:coredns || true
+            - terraform import module.eks_addons.aws_eks_addon.aws_ebs_csi_driver ${EKS_CLUSTER_NAME}:aws-ebs-csi-driver || true
+            - terraform import module.eks_addons.aws_eks_addon.aws_secrets_store_csi_driver_provider ${EKS_CLUSTER_NAME}:aws-secrets-store-csi-driver-provider || true
             - terraform apply tfplan
       - step:
           name: "Verify: Automated AWS Infrastructure Health Check"
@@ -217,8 +213,14 @@ pipelines:
             - echo "Connecting to existing cluster: $TARGET_CLUSTER ($AWS_REGION)..."
             - aws eks update-kubeconfig --region $AWS_REGION --name $TARGET_CLUSTER
             - kubectl get nodes -o wide
+            - echo "Applying Gateway API and KubeRay CRDs..."
             - kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.1.0/standard-install.yaml || true
             - kubectl apply -k "github.com/ray-project/kuberay/ray-operator/config/crd?ref=v1.1.1" || true
+            - echo "Applying Secrets Store CSI Driver CRDs and Provider..."
+            - kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/main/charts/secrets-store-csi-driver/crds/secrets-store.csi.x-k8s.io_secretproviderclasses.yaml || true
+            - kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/main/charts/secrets-store-csi-driver/crds/secrets-store.csi.x-k8s.io_secretproviderclasspodstatuses.yaml || true
+            - kubectl apply -f https://raw.githubusercontent.com/aws/secrets-store-csi-driver-provider-aws/main/deployment/aws-provider-installer.yaml || true
+            - echo "Applying Namespace, SecretProviderClass, and IRSA..."
             - kubectl apply -f k8s/00-namespace.yaml
             - kubectl apply -f k8s/01-secrets.yaml
             - kubectl apply -f k8s/02-irsa-serviceaccount.yaml
@@ -236,6 +238,11 @@ pipelines:
           script:
             - cd terraform/environments/prod
             - terraform init
+            - export EKS_CLUSTER_NAME=${EKS_CLUSTER_NAME:-"distributed-ai-eks"}
+            - echo "Syncing pre-existing EKS addons into Terraform state if present..."
+            - terraform import module.eks_addons.aws_eks_addon.coredns ${EKS_CLUSTER_NAME}:coredns || true
+            - terraform import module.eks_addons.aws_eks_addon.aws_ebs_csi_driver ${EKS_CLUSTER_NAME}:aws-ebs-csi-driver || true
+            - terraform import module.eks_addons.aws_eks_addon.aws_secrets_store_csi_driver_provider ${EKS_CLUSTER_NAME}:aws-secrets-store-csi-driver-provider || true
             - terraform apply -auto-approve
       - step:
           name: "Verify Infrastructure Health"

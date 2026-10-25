@@ -34,32 +34,4 @@ resource "helm_release" "gateway_api_controller" {
   }
 }
 
-# 3. JM Comment: Kubernetes Secrets Store CSI Driver for Zero-Trust AWS Secrets Manager mounting
-resource "helm_release" "secrets_store_csi_driver" {
-  name             = "secrets-store-csi-driver"
-  repository       = "https://kubernetes-sigs.github.io/secrets-store-csi-driver/charts"
-  chart            = "secrets-store-csi-driver"
-  version          = "1.4.3"
-  namespace        = "kube-system"
 
-  set {
-    name  = "syncSecret.enabled"
-    value = "true"
-  }
-
-  set {
-    name  = "enableSecretRotation"
-    value = "true"
-  }
-}
-
-# 4. JM Comment: AWS Secrets and Configuration Provider (ASCP) DaemonSet
-resource "helm_release" "aws_secrets_provider" {
-  name       = "secrets-store-csi-driver-provider-aws"
-  repository = "https://aws.github.io/secrets-store-csi-driver-provider-aws"
-  chart      = "secrets-store-csi-driver-provider-aws"
-  version    = "1.0.9"
-  namespace  = "kube-system"
-
-  depends_on = [helm_release.secrets_store_csi_driver]
-}
