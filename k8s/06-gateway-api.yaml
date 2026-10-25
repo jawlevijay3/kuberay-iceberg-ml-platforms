@@ -1,13 +1,13 @@
-# JM Comment: Kubernetes Gateway API Specification for Ray Dashboard
+# JM Comment: Kubernetes Gateway API Specification for Ray, Grafana, and Prometheus Routing
 apiVersion: gateway.networking.k8s.io/v1
 kind: GatewayClass
 metadata:
   name: ray-gateway-class
 spec:
   controllerName: gateway.envoyproxy.io/gatewayclass-controller
-  description: "Ray Cluster Gateway Routing"
+  description: "Ray Cluster and Monitoring Gateway Routing"
 ---
-# JM Comment: Gateway resource exposing Ray services with modern L7 routing
+# JM Comment: Gateway resource exposing Ray, Grafana, and Prometheus with modern L7 routing
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
@@ -23,7 +23,7 @@ spec:
       port: 80
       allowedRoutes:
         namespaces:
-          from: Same
+          from: All
     - name: https
       protocol: HTTPS
       port: 443
@@ -34,9 +34,24 @@ spec:
             name: ray-dashboard-tls
       allowedRoutes:
         namespaces:
-          from: Same
+          from: All
 ---
-# JM Comment: HTTPRoute directing traffic to the Ray Head Dashboard service (port 8265)
+# ReferenceGrant in monitoring namespace allowing Gateway in kuberay to route to monitoring services
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-kuberay-gateway
+  namespace: monitoring
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      namespace: kuberay
+  to:
+    - group: ""
+      kind: Service
+---
+# 1. Ray Head Dashboard HTTPRoute (Host-based and default fallback)
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -45,6 +60,10 @@ metadata:
 spec:
   parentRefs:
     - name: ray-dashboard-gateway
+      namespace: kuberay
+  hostnames:
+    - "ray.corporate-ai.internal"
+    - "ray.local"
   rules:
     - matches:
         - path:
@@ -53,4 +72,70 @@ spec:
       backendRefs:
         - name: corporate-ai-cluster-head-svc
           port: 8265
+          weight: 100
+---
+# Default Fallback Route (when accessed directly via ELB DNS or IP)
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: ray-default-route
+  namespace: kuberay
+spec:
+  parentRefs:
+    - name: ray-dashboard-gateway
+      namespace: kuberay
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: corporate-ai-cluster-head-svc
+          port: 8265
+          weight: 100
+---
+# 2. Grafana Dashboard HTTPRoute (Host-based)
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: grafana-route
+  namespace: monitoring
+spec:
+  parentRefs:
+    - name: ray-dashboard-gateway
+      namespace: kuberay
+  hostnames:
+    - "grafana.corporate-ai.internal"
+    - "grafana.local"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: grafana
+          port: 3000
+          weight: 100
+---
+# 3. Prometheus Server UI HTTPRoute (Host-based)
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: prometheus-route
+  namespace: monitoring
+spec:
+  parentRefs:
+    - name: ray-dashboard-gateway
+      namespace: kuberay
+  hostnames:
+    - "prometheus.corporate-ai.internal"
+    - "prometheus.local"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: prometheus
+          port: 9090
           weight: 100

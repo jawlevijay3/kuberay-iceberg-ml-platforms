@@ -274,25 +274,25 @@ data:
           ]
         },
         {
-          "title": "Ray Tasks Status (Running / Pending / Finished)",
+          "title": "Ray Tasks Status (Executing / Waiting / Dispatched)",
           "type": "stat",
           "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
           "targets": [
             {
-              "expr": "sum(ray_tasks_state) by (State) or sum(rate(ray_tasks_state[5m]))",
+              "expr": "sum(ray_scheduler_tasks) by (State) or vector(0)",
               "legendFormat": "{{State}}",
               "refId": "A"
             }
           ]
         },
         {
-          "title": "Ray Active Actors",
+          "title": "Ray Active Workers & Actors",
           "type": "stat",
           "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
           "targets": [
             {
-              "expr": "sum(ray_actors_state{State=\"ALIVE\"}) or vector(0)",
-              "legendFormat": "Alive Actors",
+              "expr": "count(count by (ip) (ray_node_cpu_utilization)) or count(kube_pod_info{namespace=\"kuberay\"})",
+              "legendFormat": "Active Instances",
               "refId": "A"
             }
           ]
@@ -303,8 +303,8 @@ data:
           "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
           "targets": [
             {
-              "expr": "sum(ray_object_store_memory{Type=\"used\"}) or vector(0)",
-              "legendFormat": "Used Plasma",
+              "expr": "sum(ray_object_store_used_memory) or vector(0)",
+              "legendFormat": "Used Plasma (Bytes)",
               "refId": "A"
             }
           ]
@@ -322,7 +322,7 @@ data:
           ]
         },
         {
-          "title": "Ray Node Memory Consumption",
+          "title": "Ray Node Memory Consumption (%)",
           "type": "timeseries",
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
           "targets": [
@@ -354,6 +354,103 @@ data:
               "expr": "sum(container_memory_working_set_bytes{namespace=\"kuberay\",container!=\"\"}) by (pod, container)",
               "legendFormat": "{{pod}} ({{container}})",
               "refId": "A"
+            }
+          ]
+        },
+        {
+          "title": "Ray Task Execution & Scheduling States (Executing / Waiting / Dispatched)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+          "targets": [
+            {
+              "expr": "sum(ray_scheduler_tasks) by (State)",
+              "legendFormat": "Task State: {{State}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "title": "Plasma Object Store Memory: Capacity vs Used vs Free (MB)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+          "targets": [
+            {
+              "expr": "sum(ray_object_store_memory) / 1048576",
+              "legendFormat": "Total Object Store Capacity (MB)",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(ray_object_store_used_memory) / 1048576",
+              "legendFormat": "Used Plasma Memory (MB)",
+              "refId": "B"
+            },
+            {
+              "expr": "sum(ray_object_store_available_memory) / 1048576",
+              "legendFormat": "Available Free Plasma (MB)",
+              "refId": "C"
+            }
+          ]
+        },
+        {
+          "title": "Plasma Object Spilling to Local NVMe & S3 (MB / Objects)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+          "targets": [
+            {
+              "expr": "sum(ray_spill_manager_objects_bytes) / 1048576",
+              "legendFormat": "Spilled Data (MB)",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(ray_spill_manager_objects)",
+              "legendFormat": "Spilled Objects Count",
+              "refId": "B"
+            },
+            {
+              "expr": "sum(ray_spill_manager_request_total)",
+              "legendFormat": "Spill Requests",
+              "refId": "C"
+            }
+          ]
+        },
+        {
+          "title": "Ray Internal Component Memory Footprint (RSS MB)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+          "targets": [
+            {
+              "expr": "sum(ray_component_rss_mb) by (Component)",
+              "legendFormat": "{{Component}} RSS MB",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "title": "Ray Internal Component CPU Utilization (%)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 },
+          "targets": [
+            {
+              "expr": "sum(ray_component_cpu_percentage) by (Component)",
+              "legendFormat": "{{Component}} CPU %",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "title": "Scheduling Health & Worker Startup Diagnostics",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 36 },
+          "targets": [
+            {
+              "expr": "sum(ray_scheduler_unscheduleable_tasks)",
+              "legendFormat": "Unschedulable Tasks (Pending Nodes)",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(ray_scheduler_failed_worker_startup_total)",
+              "legendFormat": "Failed Worker Startups",
+              "refId": "B"
             }
           ]
         }
@@ -412,7 +509,14 @@ spec:
             - name: dashboard-provider
               mountPath: /etc/grafana/provisioning/dashboards
             - name: dashboards
-              mountPath: /var/lib/grafana/dashboards
+              mountPath: /var/lib/grafana/dashboards/ray-cluster-metrics.json
+              subPath: ray-cluster-dashboard.json
+            - name: dashboards-default
+              mountPath: /var/lib/grafana/dashboards/default_grafana_dashboard.json
+              subPath: default_grafana_dashboard.json
+            - name: dashboards-data
+              mountPath: /var/lib/grafana/dashboards/data_grafana_dashboard.json
+              subPath: data_grafana_dashboard.json
       volumes:
         - name: datasources
           configMap:
@@ -423,6 +527,12 @@ spec:
         - name: dashboards
           configMap:
             name: grafana-ray-dashboard
+        - name: dashboards-default
+          configMap:
+            name: ray-default-dashboard
+        - name: dashboards-data
+          configMap:
+            name: ray-data-dashboard
 ---
 apiVersion: v1
 kind: Service

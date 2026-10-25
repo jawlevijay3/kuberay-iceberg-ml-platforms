@@ -46,6 +46,26 @@ spec:
             volumeMounts:
               - mountPath: /dev/shm
                 name: dshm
+            livenessProbe:
+              exec:
+                command:
+                  - bash
+                  - -c
+                  - wget -T 2 -q -O- http://localhost:52365/api/local_raylet_healthz | grep success && wget -T 2 -q -O- http://localhost:8265/api/gcs_healthz | grep success
+              initialDelaySeconds: 30
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 120
+            readinessProbe:
+              exec:
+                command:
+                  - bash
+                  - -c
+                  - wget -T 2 -q -O- http://localhost:52365/api/local_raylet_healthz | grep success && wget -T 2 -q -O- http://localhost:8265/api/gcs_healthz | grep success
+              initialDelaySeconds: 15
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 10
             ports:
               - containerPort: 6379
                 name: gcs
@@ -55,6 +75,11 @@ spec:
                 name: client
               - containerPort: 44217
                 name: metrics
+            env:
+              - name: RAY_GRAFANA_HOST
+                value: "http://grafana.monitoring.svc.cluster.local:3000"
+              - name: RAY_PROMETHEUS_HOST
+                value: "http://prometheus.monitoring.svc.cluster.local:9090"
         volumes:
           - name: dshm
             emptyDir:
@@ -85,6 +110,8 @@ spec:
             prometheus.io/port: "44217"
             prometheus.io/path: "/metrics"
         spec:
+          securityContext:
+            fsGroup: 100
           serviceAccountName: ray-worker-sa
           nodeSelector:
             ray-node-type: worker
@@ -115,7 +142,7 @@ spec:
               volumeMounts:
                 - mountPath: /dev/shm
                   name: dshm
-                - mountPath: /tmp/ray/spill
+                - mountPath: /tmp/ray
                   name: ray-spill-storage
               env:
                 - name: ICEBERG_CATALOG_TYPE
