@@ -119,7 +119,9 @@ definitions:
           - kubectl apply -f k8s/06-alb-ingress.yaml || true
           - echo "Applying Prometheus and Grafana Monitoring Stack..."
           - kubectl apply -f k8s/07-monitoring.yaml
-          - echo "Prerequisites, Metrics Server, Prometheus & Grafana verified successfully."
+          - echo "Applying Centralized Logging Stack (Fluent Bit -> CloudWatch)..."
+          - kubectl apply -f k8s/07-fluentbit-logging.yaml
+          - echo "Prerequisites, Metrics Server, Prometheus, Grafana & Fluent Bit verified successfully."
 
     # -------------------------------------------------------------------------
     # Deploy RayCluster & RayJob CRD
@@ -171,7 +173,8 @@ definitions:
                 kubectl delete svc "$svc" -n "$ns" --timeout=60s || true
               fi
             done
-          - echo "=== [Stage 2 - Deleting Prometheus & Grafana Monitoring Stack] ==="
+          - echo "=== [Stage 2 - Deleting Prometheus, Grafana & Fluent Bit Logging Stack] ==="
+          - kubectl delete -f k8s/07-fluentbit-logging.yaml --ignore-not-found=true --timeout=30s || true
           - kubectl delete -f k8s/07-monitoring.yaml --ignore-not-found=true --timeout=60s || true
           - kubectl delete namespace monitoring --ignore-not-found=true --timeout=60s || true
           - echo "=== [Stage 3 - Deleting RayJobs & RayClusters] ==="
@@ -217,23 +220,23 @@ definitions:
 pipelines:
   # ---------------------------------------------------------------------------
   # JM Comment: AUTOMATIC PIPELINES ARE DISABLED
-  # No pipeline runs on commit, branch push, or pull-request.
-  # ALL actions must be explicitly initiated via manual custom pipeline selection.
+  # Per enterprise governance, no pipeline runs on unreviewed branch pushes or PRs.
+  # All operations run via explicit, isolated manual custom pipelines in Bitbucket UI.
   # ---------------------------------------------------------------------------
 
   custom:
     # -------------------------------------------------------------------------
-    # Custom Option 1: Safe Terraform Deployment (Plan -> Manual Approval -> Apply)
+    # Pipeline 1: Deploy AWS Infrastructure (Terraform Plan & Manual Apply)
     # -------------------------------------------------------------------------
-    1-terraform-deploy-infra:
+    1-deploy-infrastructure:
       - step:
-          name: "Plan: Preview All Infrastructure Changes"
+          name: "Terraform Plan: Preview All AWS Infrastructure"
           image: hashicorp/terraform:1.9.4
           script:
             - cd terraform/environments/prod
             - terraform init
             - export EKS_CLUSTER_NAME=${EKS_CLUSTER_NAME:-"distributed-ai-eks"}
-            - echo "Syncing pre-existing EKS addons into Terraform state if present to avoid 409 ResourceInUseException..."
+            - echo "Syncing pre-existing EKS addons into Terraform state if present to avoid 409 Conflict..."
             - terraform import module.eks_addons.aws_eks_addon.coredns ${EKS_CLUSTER_NAME}:coredns || true
             - terraform import module.eks_addons.aws_eks_addon.aws_ebs_csi_driver ${EKS_CLUSTER_NAME}:aws-ebs-csi-driver || true
             - terraform import module.eks_addons.aws_eks_addon.aws_secrets_store_csi_driver_provider ${EKS_CLUSTER_NAME}:aws-secrets-store-csi-driver-provider || true
@@ -242,21 +245,20 @@ pipelines:
           artifacts:
             - terraform/environments/prod/tfplan
       - step:
-          name: "Apply: Deploy AWS Infrastructure (Manual Approval Required)"
+          name: "Terraform Apply: Deploy Infrastructure (Manual Approval Required)"
           trigger: manual
           image: hashicorp/terraform:1.9.4
           script:
             - cd terraform/environments/prod
             - terraform init
             - export EKS_CLUSTER_NAME=${EKS_CLUSTER_NAME:-"distributed-ai-eks"}
-            - echo "Ensuring existing addons are imported before apply..."
             - terraform import module.eks_addons.aws_eks_addon.coredns ${EKS_CLUSTER_NAME}:coredns || true
             - terraform import module.eks_addons.aws_eks_addon.aws_ebs_csi_driver ${EKS_CLUSTER_NAME}:aws-ebs-csi-driver || true
             - terraform import module.eks_addons.aws_eks_addon.aws_secrets_store_csi_driver_provider ${EKS_CLUSTER_NAME}:aws-secrets-store-csi-driver-provider || true
             - terraform import module.eks_addons.aws_eks_addon.metrics_server ${EKS_CLUSTER_NAME}:metrics-server || true
             - terraform apply tfplan
       - step:
-          name: "Verify: Automated AWS Infrastructure Health Check"
+          name: "Audit: Verify AWS Cluster & Node Pool Health"
           image: amazon/aws-cli:2.15.15
           script:
             - export AWS_REGION=${AWS_DEFAULT_REGION:-"us-east-1"}
@@ -264,99 +266,35 @@ pipelines:
             - echo "Verifying created AWS resources in $AWS_REGION..."
             - aws eks describe-cluster --name $CLUSTER --region $AWS_REGION --query "cluster.status" || true
             - aws eks list-nodegroups --cluster-name $CLUSTER --region $AWS_REGION || true
-            - echo "Verification completed."
+            - echo "Infrastructure verified successfully."
 
     # -------------------------------------------------------------------------
-    # Custom Option 2: Safe Segmented Teardown (EKS Workloads FIRST -> Terraform Destroy)
+    # Pipeline 2: Build & Deploy Ray AI Platform (Application CI/CD)
     # -------------------------------------------------------------------------
-    2-terraform-destroy-infra:
-      - step: *teardown-k8s-workloads
-      - step:
-          name: "Plan Teardown: Preview Resources to Destroy"
-          image: hashicorp/terraform:1.9.4
-          script:
-            - cd terraform/environments/prod
-            - terraform init
-            - terraform plan -destroy
-      - step:
-          name: "Execute Teardown: Destroy AWS Infrastructure (Manual Approval Required)"
-          trigger: manual
-          image: hashicorp/terraform:1.9.4
-          script:
-            - cd terraform/environments/prod
-            - terraform init
-            - terraform destroy -auto-approve
-      - step:
-          name: "Audit: Verify Complete AWS Resource Deletion"
-          image: amazon/aws-cli:2.15.15
-          script:
-            - export AWS_REGION=${AWS_DEFAULT_REGION:-"us-east-1"}
-            - export CLUSTER=${EKS_CLUSTER_NAME:-"distributed-ai-eks"}
-            - echo "Running post-teardown deletion audit..."
-            - aws eks describe-cluster --name $CLUSTER --region $AWS_REGION || echo "EKS Cluster successfully deleted."
-            - aws ec2 describe-vpcs --filters "Name=tag:Name,Values=${CLUSTER}-vpc" --region $AWS_REGION --query "Vpcs[*].VpcId" --output text
-            - echo "Deletion audit complete. Only Terraform-managed resources were destroyed."
-
-    # -------------------------------------------------------------------------
-    # Custom Option 3: Deploy RayJob Only (Build Image -> Deploy to EKS)
-    # -------------------------------------------------------------------------
-    3-deploy-rayjob-only:
+    2-build-and-deploy-ray-pipeline:
       - step: *unit-tests
       - step: *build-and-push
       - step: *check-prerequisites
       - step: *deploy-rayjob
 
     # -------------------------------------------------------------------------
-    # Custom Option 4: Deploy RayJob on Already Existing EKS Cluster
+    # Pipeline 3: Complete End-to-End Automated Deployment (Infra + Workloads)
     # -------------------------------------------------------------------------
-    4-deploy-rayjob-existing-cluster:
+    3-full-end-to-end-deployment:
       - step:
-          name: "Inspect Existing Cluster & Install Prerequisites"
-          image: amazon/aws-cli:2.15.15
-          script:
-            - curl -LO "https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl"
-            - chmod +x kubectl && mv kubectl /usr/local/bin/
-            - export TARGET_CLUSTER=${EXISTING_EKS_CLUSTER_NAME:-"my-existing-eks-cluster"}
-            - export AWS_REGION=${AWS_DEFAULT_REGION:-"us-east-1"}
-            - echo "Connecting to existing cluster $TARGET_CLUSTER in $AWS_REGION..."
-            - aws eks update-kubeconfig --region $AWS_REGION --name $TARGET_CLUSTER
-            - kubectl get nodes -o wide
-            - echo "Applying Gateway API and KubeRay CRDs..."
-            - kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.1.0/standard-install.yaml || true
-            - kubectl apply -k "github.com/ray-project/kuberay/ray-operator/config/crd?ref=v1.1.1" || true
-            - echo "Applying Secrets Store CSI Driver CRDs and Provider..."
-            - kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/main/charts/secrets-store-csi-driver/crds/secrets-store.csi.x-k8s.io_secretproviderclasses.yaml || true
-            - kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/main/charts/secrets-store-csi-driver/crds/secrets-store.csi.x-k8s.io_secretproviderclasspodstatuses.yaml || true
-            - kubectl apply -f https://raw.githubusercontent.com/aws/secrets-store-csi-driver-provider-aws/main/deployment/aws-provider-installer.yaml || true
-            - echo "Applying Namespaces, Secrets, IRSA, and Gateway API..."
-            - kubectl apply -f k8s/00-namespace.yaml
-            - kubectl apply -f k8s/01-secrets.yaml
-            - kubectl apply -f k8s/02-irsa-serviceaccount.yaml
-            - kubectl apply -f k8s/06-gateway-api.yaml
-            - echo "Applying Prometheus & Grafana Monitoring Stack..."
-            - kubectl apply -f k8s/07-monitoring.yaml
-            - echo "Existing cluster prerequisites and monitoring verified."
-      - step: *deploy-rayjob
-
-    # -------------------------------------------------------------------------
-    # Custom Option 5: Full End-to-End Pipeline (Terraform -> Health -> RayJob)
-    # -------------------------------------------------------------------------
-    5-full-end-to-end-deployment:
-      - step:
-          name: "Deploy Infrastructure via Terraform"
+          name: "Terraform Apply: Deploy Full Platform Infrastructure"
           image: hashicorp/terraform:1.9.4
           script:
             - cd terraform/environments/prod
             - terraform init
             - export EKS_CLUSTER_NAME=${EKS_CLUSTER_NAME:-"distributed-ai-eks"}
-            - echo "Syncing pre-existing EKS addons into Terraform state if present..."
             - terraform import module.eks_addons.aws_eks_addon.coredns ${EKS_CLUSTER_NAME}:coredns || true
             - terraform import module.eks_addons.aws_eks_addon.aws_ebs_csi_driver ${EKS_CLUSTER_NAME}:aws-ebs-csi-driver || true
             - terraform import module.eks_addons.aws_eks_addon.aws_secrets_store_csi_driver_provider ${EKS_CLUSTER_NAME}:aws-secrets-store-csi-driver-provider || true
             - terraform import module.eks_addons.aws_eks_addon.metrics_server ${EKS_CLUSTER_NAME}:metrics-server || true
             - terraform apply -auto-approve
       - step:
-          name: "Verify Infrastructure Health"
+          name: "Verify Infrastructure Status"
           image: amazon/aws-cli:2.15.15
           script:
             - export AWS_REGION=${AWS_DEFAULT_REGION:-"us-east-1"}
@@ -368,40 +306,39 @@ pipelines:
       - step: *deploy-rayjob
 
     # -------------------------------------------------------------------------
-    # Custom Option 6: Clean Tear-down of Existing RayJob & Immediate Redeployment
+    # Pipeline 4: Teardown Workloads & LoadBalancers Only (Cluster Reset)
     # -------------------------------------------------------------------------
-    6-delete-and-redeploy-rayjob:
-      - step:
-          name: "Clean Tear-Down: Delete Existing RayJob & Reset Worker Pods"
-          image: amazon/aws-cli:2.15.15
-          script:
-            - curl -LO "https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl"
-            - chmod +x kubectl && mv kubectl /usr/local/bin/
-            - export TARGET_CLUSTER=${EXISTING_EKS_CLUSTER_NAME:-${EKS_CLUSTER_NAME:-"distributed-ai-eks"}}
-            - export AWS_REGION=${AWS_DEFAULT_REGION:-"us-east-1"}
-            - echo "Connecting to EKS Cluster $TARGET_CLUSTER in $AWS_REGION..."
-            - aws eks update-kubeconfig --region $AWS_REGION --name $TARGET_CLUSTER
-            - echo "Deleting existing RayJob resources if present..."
-            - kubectl delete rayjob corporate-data-pipeline-job -n kuberay --ignore-not-found=true --timeout=30s || kubectl patch rayjob corporate-data-pipeline-job -n kuberay -p '{"metadata":{"finalizers":[]}}' --type=merge || true
-            - echo "Clearing out crashlooping or stuck worker pods..."
-            - kubectl delete pod -l ray.io/node-type=worker -n kuberay --ignore-not-found=true
-            - kubectl delete pod -l ray.io/node-type=specialized-worker -n kuberay --ignore-not-found=true
-            - echo "Existing RayJob deleted and worker pods reset."
-      - step: *unit-tests
-      - step: *build-and-push
-      - step: *check-prerequisites
-      - step: *deploy-rayjob
-
-    # -------------------------------------------------------------------------
-    # Custom Option 7: Standalone EKS-Level Workload Teardown Only
-    # JM Comment: Deletes Ray, Cloud LoadBalancers, and Monitoring without destroying VPC/EKS
-    # -------------------------------------------------------------------------
-    7-teardown-eks-workloads-only:
+    4-teardown-workloads-only:
       - step: *teardown-k8s-workloads
 
     # -------------------------------------------------------------------------
-    # Custom Option 8: Fast Trigger RayJob (Deploy/Re-run without rebuilding image)
+    # Pipeline 5: Destroy AWS Infrastructure (Safe Teardown & Terraform Destroy)
     # -------------------------------------------------------------------------
-    8-trigger-rayjob-only:
-      - step: *deploy-rayjob
+    5-destroy-infrastructure:
+      - step: *teardown-k8s-workloads
+      - step:
+          name: "Terraform Plan Destroy: Preview Cloud Resources to Terminate"
+          image: hashicorp/terraform:1.9.4
+          script:
+            - cd terraform/environments/prod
+            - terraform init
+            - terraform plan -destroy
+      - step:
+          name: "Terraform Destroy: Terminate AWS Infrastructure (Manual Approval Required)"
+          trigger: manual
+          image: hashicorp/terraform:1.9.4
+          script:
+            - cd terraform/environments/prod
+            - terraform init
+            - terraform destroy -auto-approve
+      - step:
+          name: "Audit: Verify AWS Resource Deletion"
+          image: amazon/aws-cli:2.15.15
+          script:
+            - export AWS_REGION=${AWS_DEFAULT_REGION:-"us-east-1"}
+            - export CLUSTER=${EKS_CLUSTER_NAME:-"distributed-ai-eks"}
+            - echo "Running post-teardown deletion audit..."
+            - aws eks describe-cluster --name $CLUSTER --region $AWS_REGION || echo "EKS Cluster successfully deleted."
+            - aws ec2 describe-vpcs --filters "Name=tag:Name,Values=${CLUSTER}-vpc" --region $AWS_REGION --query "Vpcs[*].VpcId" --output text
+            - echo "Deletion audit complete. All resources cleanly removed."
 

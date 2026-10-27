@@ -54,10 +54,11 @@ Modern enterprise AI platforms face a fundamental architectural divide:
 ```mermaid
 flowchart TB
     subgraph VCS_CICD["Bitbucket CI/CD Custom Pipelines"]
-        CUSTOM_DEPLOY["1-terraform-deploy-infra (Segmented Layers)"]
-        CUSTOM_DESTROY["2-terraform-destroy-infra (With Audit Report)"]
-        CUSTOM_JOB["3-deploy-rayjob-only"]
-        CUSTOM_EXISTING["4-deploy-rayjob-existing-cluster"]
+        CUSTOM_DEPLOY["1-deploy-infrastructure (Terraform Plan & Apply)"]
+        CUSTOM_JOB["2-build-and-deploy-ray-pipeline (Build & Run Ray)"]
+        CUSTOM_E2E["3-full-end-to-end-deployment (Full Platform)"]
+        CUSTOM_RESET["4-teardown-workloads-only (Workload Drain)"]
+        CUSTOM_DESTROY["5-destroy-infrastructure (Safe Teardown)"]
     end
 
     subgraph AWS_INFRA["AWS Cloud Infrastructure (us-east-1)"]
@@ -227,12 +228,11 @@ Configured in `bitbucket-pipelines.yml`:
 
 | Pipeline Option | Trigger Type | What It Does |
 | :--- | :--- | :--- |
-| **`1-terraform-deploy-infra`** | Custom | Deploys Terraform segment-by-segment (`01-vpc` -> `02-storage` -> `03-eks` -> `04-nodes` -> `05-kuberay-gateway`) and verifies creation via AWS CLI. |
-| **`2-terraform-destroy-infra`** | Custom | Destroys infrastructure in reverse order and **runs an automated audit**. If any VPC, EKS cluster, or S3 bucket remains, it prints an alert listing exact IDs for manual console deletion. |
-| **`3-deploy-rayjob-only`** | Custom | Runs unit tests, builds container image, pushes to ECR, and deploys RayJob CRD to EKS. |
-| **`4-deploy-rayjob-existing-cluster`** | Custom | Deploys RayJob to an **already existing EKS cluster** (`EXISTING_EKS_CLUSTER_NAME`), automatically checking and installing missing CRDs and prerequisites first! |
-| **`5-full-end-to-end-deployment`** | Custom | Runs complete automated deployment: Terraform segments -> verification -> container build -> RayJob deploy. |
-| **Pull Requests & Main** | Automatic | PRs validate Terraform syntax and run tests; merges deploy to EKS. |
+| **`1-deploy-infrastructure`** | Custom | Plans and deploys Terraform infrastructure (VPC, EKS, Node Pools, Addons, KubeRay, Gateway API) with manual approval gate and AWS CLI audit. |
+| **`2-build-and-deploy-ray-pipeline`** | Custom | Runs unit tests, builds and pushes Docker image to AWS ECR, configures prerequisites/monitoring/logging, and submits `RayJob` CRD. |
+| **`3-full-end-to-end-deployment`** | Custom | Single-click end-to-end platform deployment: provisions Terraform infra, builds image, and launches the Ray AI pipeline. |
+| **`4-teardown-workloads-only`** | Custom | Safely drains and deletes Ray workloads, Gateway LoadBalancers, Monitoring/Logging, and S3 staging data without destroying VPC/EKS. |
+| **`5-destroy-infrastructure`** | Custom | Executes safe workload teardown first (releasing AWS ENIs & ELBs), then runs `terraform destroy` with manual approval and post-deletion audit. |
 
 ---
 
@@ -246,7 +246,7 @@ Configured in `bitbucket-pipelines.yml`:
 
 ## 11. Step-by-Step Setup & Verification Guide
 
-1. **Configure Environment Variables**: Read [`ENV_VARS_GUIDE.md`](file:///C:/Users/Vijay.K/Music/odex-iac-bootstrap/ENV_VARS_GUIDE.md).
+1. **Configure Environment Variables**: Read [`ENV_VARS_GUIDE.md`](file:///c:/Users/Vijay.K/Music/odex-iac-bootstrap/ENV_VARS_GUIDE.md).
 2. **Run Local Unit Tests**:
    ```bash
    python tests/test_ray_components.py
@@ -256,4 +256,4 @@ Configured in `bitbucket-pipelines.yml`:
    python scripts/run_local_pipeline.py
    ```
 4. **Trigger Deployment in Bitbucket**:
-   Go to Bitbucket -> Pipelines -> Run Pipeline -> Select `1-terraform-deploy-infra` or `5-full-end-to-end-deployment`.
+   Go to Bitbucket -> Pipelines -> Run Pipeline -> Select `1-deploy-infrastructure` or `3-full-end-to-end-deployment`.

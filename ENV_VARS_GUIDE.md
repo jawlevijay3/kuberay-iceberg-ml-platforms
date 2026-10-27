@@ -12,7 +12,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │ STAGE 1: Infrastructure Provisioning (Terraform Pipeline)                   │
-│ Run Custom Pipeline: '1-terraform-deploy-infra'                             │
+│ Run Custom Pipeline: '1-deploy-infrastructure'                              │
 │ 1. Deploys VPC, Subnets, NAT Gateways across 3 AZs                          │
 │ 2. Deploys S3 Data Lake, Iceberg Warehouse, and AWS Glue Catalog            │
 │ 3. Deploys EKS Cluster v1.34 with managed addons (VPC-CNI, CoreDNS, EBS CSI)│
@@ -24,11 +24,11 @@
                                       ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │ STAGE 2: Pipeline Execution (RayJob Deployment Pipeline)                    │
-│ Run Custom Pipeline: '3-deploy-rayjob-only' (or merge PR to main)           │
+│ Run Custom Pipeline: '2-build-and-deploy-ray-pipeline'                      │
 │ 1. Executes Unit Tests on data ingestion and canonicalization               │
 │ 2. Builds Docker container image and pushes to Amazon ECR                   │
 │ 3. Injects SecretProviderClass for AWS Secrets Store CSI Driver             │
-│ 4. Applies RayCluster and triggers RayJob CRD execution on EKS 1.34         │
+│ 4. Applies RayCluster, Monitoring, Logging, and RayJob CRD execution        │
 │ 5. Executes Ingestion -> Entity Resolution -> Iceberg Commit -> Ray Train   │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -49,7 +49,6 @@
 | `AWS_SECRET_ACCESS_KEY` | IAM User secret access key matching the Access Key ID | **YES** (Check Secured) | `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY` | Authenticates all AWS API calls in the Bitbucket pipeline runner. |
 | `AWS_DEFAULT_REGION` | Primary AWS region for all infrastructure resources | NO | `us-east-1` | Sets the deployment region for Terraform, EKS cluster, and S3 data lakes. |
 | `EKS_CLUSTER_NAME` | Name of the primary EKS cluster managed by Terraform | NO | `distributed-ai-eks` | Target cluster for Terraform provisioning, `update-kubeconfig`, and RayJob dispatch. |
-| `EXISTING_EKS_CLUSTER_NAME` | **(Optional)** Name of an already-existing cluster | NO | `my-production-cluster` | Used exclusively by custom pipeline `4-deploy-rayjob-existing-cluster`. |
 | `ECR_REGISTRY_URL` | AWS Elastic Container Registry base URL | NO | `123456789012.dkr.ecr.us-east-1.amazonaws.com` | Docker tag and push destination for the `distributed-ai-ray` container image. |
 | `LLM_API_KEY` | Secret token for LLM-based Entity Resolution service | **YES** (Check Secured) | `sk-enterprise-token-v2` | Used by CI/CD and injected into Secrets Store CSI Driver. |
 

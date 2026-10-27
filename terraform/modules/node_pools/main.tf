@@ -33,6 +33,12 @@ resource "aws_iam_role_policy_attachment" "node_amazon_ec2_container_registry_re
   role       = aws_iam_role.nodes.name
 }
 
+# JM Comment: Grants nodes permission to stream container stdout/stderr to CloudWatch Logs via Fluent Bit
+resource "aws_iam_role_policy_attachment" "node_cloudwatch_agent_server_policy" {
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+  role       = aws_iam_role.nodes.name
+}
+
 # -------------------------------------------------------------------------
 # Node Pool 1: Ray Head & System Services (Reliable On-Demand Instances)
 # -------------------------------------------------------------------------

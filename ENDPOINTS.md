@@ -111,3 +111,25 @@ kubectl logs corporate-data-pipeline-job-nwvbb -n kuberay
 # 3. View live cluster resource allocation
 kubectl exec -n kuberay corporate-ai-cluster-head-22q4d -- ray status
 ```
+
+---
+
+## 6. Centralized Logging (AWS CloudWatch & Fluent Bit)
+
+Container stdout/stderr logs across all Ray Head, Worker, and RayJob pods are automatically aggregated in real-time by the Fluent Bit DaemonSet and streamed to CloudWatch Logs:
+
+- **Workload Log Group:** `/aws/eks/distributed-ai-eks/workloads`
+- **System Log Group:** `/aws/eks/distributed-ai-eks/system`
+
+### Query Logs via AWS CLI
+```bash
+# Tail live Ray pod logs from CloudWatch
+aws logs tail /aws/eks/distributed-ai-eks/workloads --follow --format short --region us-east-1
+
+# Filter for error logs across all Ray workers
+aws logs filter-log-events \
+  --log-group-name /aws/eks/distributed-ai-eks/workloads \
+  --filter-pattern "ERROR" \
+  --region us-east-1
+```
+
