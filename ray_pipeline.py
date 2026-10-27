@@ -341,7 +341,7 @@ def write_to_iceberg(records: List[Dict[str, Any]], table_name: str = "corporate
                 try:
                     glue_client.get_table(DatabaseName=glue_db, Name=table_name)
                     logger.info(f"AWS Glue table '{table_name}' verified in database '{glue_db}'.")
-                except glue_client.exceptions.EntityNotFoundException:
+                except Exception:
                     logger.info(f"Creating AWS Glue Iceberg table '{table_name}' in database '{glue_db}'...")
                     glue_client.create_table(
                         DatabaseName=glue_db,

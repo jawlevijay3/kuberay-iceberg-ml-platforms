@@ -148,6 +148,7 @@ definitions:
             aws s3api head-bucket --bucket "$TARGET_BUCKET" 2>/dev/null || aws s3api create-bucket --bucket "$TARGET_BUCKET" --region $AWS_REGION || true
             aws s3api head-bucket --bucket "distributed-ai-models-693880751318" 2>/dev/null || aws s3api create-bucket --bucket "distributed-ai-models-693880751318" --region $AWS_REGION || true
             aws glue get-database --name corporate_iceberg_db --region $AWS_REGION 2>/dev/null || aws glue create-database --database-input '{"Name":"corporate_iceberg_db","Description":"Glue catalog database for Ray Iceberg"}' --region $AWS_REGION || true
+            aws glue get-table --database-name corporate_iceberg_db --name corporate_registry --region $AWS_REGION 2>/dev/null || aws glue create-table --database-name corporate_iceberg_db --table-input '{"Name":"corporate_registry","Description":"Apache Iceberg Table for Harmonized Corporate Registry","TableType":"EXTERNAL_TABLE","Parameters":{"table_type":"ICEBERG","format":"iceberg/parquet"},"StorageDescriptor":{"Location":"s3://'"$TARGET_BUCKET"'/iceberg-warehouse/corporate_iceberg_db/corporate_registry","Columns":[{"Name":"canonical_id","Type":"string"},{"Name":"corporate_name","Type":"string"},{"Name":"canonical_name","Type":"string"},{"Name":"country","Type":"string"},{"Name":"headcount","Type":"bigint"},{"Name":"reported_revenue_usd","Type":"double"},{"Name":"is_resolved","Type":"boolean"},{"Name":"source_feed","Type":"string"}]}}' --region $AWS_REGION || true
           - export IMAGE_TAG="${BITBUCKET_COMMIT:0:8}"
           - |
             if [ -n "$IMAGE_TAG" ]; then
@@ -156,11 +157,14 @@ definitions:
             fi
           - echo "Deploying Production RayCluster (Head + Spot Workers + Bottlerocket Resolver)..."
           - kubectl apply -f k8s/03-raycluster.yaml
-          - echo "Restarting Ray worker pods to guarantee immediate pickup of the newly published container image..."
-          - kubectl delete pod -l ray.io/node-type=worker -n kuberay --ignore-not-found=true
+          - echo "Restarting Ray cluster pods (head and workers) to guarantee immediate pickup of the newly published container image..."
+          - kubectl delete pod -l ray.io/cluster=corporate-ai-cluster -n kuberay --ignore-not-found=true
           - echo "Cleaning up any previously completed RayJob to ensure clean run..."
           - kubectl delete rayjob corporate-data-pipeline-job -n kuberay --ignore-not-found=true
           - kubectl delete pod -l job-type=corporate-harmonization -n kuberay --ignore-not-found=true
+          - echo "Waiting 15 seconds for Ray head pod to initialize with the updated container image..."
+          - sleep 15
+          - kubectl wait --for=condition=Ready pod -l ray.io/node-type=head -n kuberay --timeout=90s || true
           - echo "Deploying RayJob CRD (Ingest -> Resolve -> Iceberg -> Ray Train)..."
           - kubectl apply -f k8s/04-rayjob.yaml
           - echo "RayJob submitted successfully."

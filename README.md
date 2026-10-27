@@ -178,7 +178,7 @@ To support **Ray Data** for high-throughput parallel ingestion and **Ray Train**
 3. **Multi-Tier Plasma Object Spilling (Local Disk -> S3)**:
    - When dataset ingestion volume exceeds the 2 GiB Plasma memory threshold (utilization > 80%), Ray automatically spills older object blocks to:
      - **Tier 1 (Local Disk)**: Mounted `emptyDir` at `/tmp/ray` for low-latency NVMe spill/restore.
-     - **Tier 2 (Remote S3)**: `s3://distributed-ai-lake-d14ec094/ray-spill/` with automated 3-day S3 lifecycle expiration.
+     - **Tier 2 (Remote S3)**: `s3://distributed-ai-lake-693880751318/ray-spill/` with automated 3-day S3 lifecycle expiration.
    - This architecture allows workers to ingest datasets orders of magnitude larger than aggregate cluster RAM.
 
 4. **Ray Train Distributed Scaling (`ScalingConfig`)**:

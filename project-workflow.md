@@ -23,7 +23,7 @@ flowchart TD
         C2 --> C3["Spot Node Group (Ray General Workers)"]
         C2 --> C4["Bottlerocket Node Group (Specialized Entity Resolver)"]
         B1 --> C5["AWS KMS Customer Managed Key"]
-        C5 --> C6["S3 Data Lake (distributed-ai-lake-d14ec094)"]
+        C5 --> C6["S3 Data Lake (distributed-ai-lake-693880751318)"]
         B1 --> C7["AWS Glue Catalog DB (corporate_iceberg_db)"]
         B1 --> C8["AWS Secrets Manager (LLM_API_KEY)"]
     end
@@ -78,7 +78,7 @@ flowchart TD
    - **Bottlerocket Specialized Node Group**: Hardened, security-focused AWS Bottlerocket OS instances tainted `dedicated=entity-resolver:NoSchedule` for isolated LLM entity resolution tasks.
 3. **Storage & Data Lake**:
    - Customer-managed AWS KMS Key with automated 365-day rotation.
-   - S3 Bucket `distributed-ai-lake-d14ec094` with AES256/KMS default encryption, public access block, and Ray spill object lifecycle rules.
+   - S3 Bucket `distributed-ai-lake-693880751318` with AES256/KMS default encryption, public access block, and Ray spill object lifecycle rules.
    - AWS Glue Data Catalog database `corporate_iceberg_db` for metadata management.
 4. **Security & Identity**:
    - AWS Secrets Manager storing sensitive API keys (`LLM_API_KEY`).
@@ -114,7 +114,7 @@ The pipeline ([ray_pipeline.py](file:///c:/Users/Vijay.K/Music/odex-iac-bootstra
 3. **Step 3: Transactional Apache Iceberg Commit**:
    - PyIceberg connects directly to AWS Glue Data Catalog (`corporate_iceberg_db`).
    - Upserts harmonized PyArrow records into table `corporate_registry`.
-   - Commits transactional snapshots (`snapshot-id`) and writes Parquet data files into `s3://distributed-ai-lake-d14ec094/iceberg-warehouse/corporate_iceberg_db.db/corporate_registry/`.
+   - Commits transactional snapshots (`snapshot-id`) and writes Parquet data files into `s3://distributed-ai-lake-693880751318/iceberg-warehouse/corporate_iceberg_db.db/corporate_registry/`.
    - ACID snapshot isolation guarantees no training job reads corrupted or partial data.
 4. **Step 4: Distributed ML Training (Ray Train)**:
    - Configures a distributed `ScalingConfig(num_workers=2)` using Ray Train.
@@ -137,7 +137,7 @@ To prevent resource leaks, orphaned Elastic Network Interfaces (ENIs), or Terraf
 1. **Delete Gateway API & LoadBalancers**: Frees AWS Network/Application Load Balancers and releases AWS ENIs.
 2. **Delete Monitoring & Ray Workloads**: Removes Grafana, Prometheus, RayJob, and RayCluster pods.
 3. **Purge AWS Glue Catalog Tables**: Deletes table `corporate_registry` from `corporate_iceberg_db` so Glue database deletion succeeds.
-4. **Purge S3 Bucket Objects & Versions**: Deletes all active objects, previous versions, and delete markers from `distributed-ai-lake-d14ec094`.
+4. **Purge S3 Bucket Objects & Versions**: Deletes all active objects, previous versions, and delete markers from `distributed-ai-lake-693880751318`.
 5. **Terraform Destroy**: Deletes the EKS cluster, node groups, KMS key, S3 bucket, Glue database, and VPC.
 
 ---
@@ -155,7 +155,7 @@ If you need to create the environment manually via the AWS Console / AWS CLI / `
 | **Internet Gateway** | `distributed-ai-eks-igw` | Attached to VPC. Route `0.0.0.0/0` in Public Route Table. |
 | **NAT Gateway** | `distributed-ai-eks-nat` | Elastic IP attached. Route `0.0.0.0/0` in Private Route Tables. |
 | **KMS Key** | `alias/distributed-ai-key` | Symmetric encryption key with automatic rotation enabled. |
-| **S3 Bucket** | `distributed-ai-lake-d14ec094` | Region `us-east-1`. Block all public access: ON. Default encryption: AWS KMS. Versioning: Enabled. |
+| **S3 Bucket** | `distributed-ai-lake-693880751318` | Region `us-east-1`. Block all public access: ON. Default encryption: AWS KMS. Versioning: Enabled. |
 | **Glue Database** | `corporate_iceberg_db` | Parameters: `classification=iceberg`. Region: `us-east-1`. |
 | **Secrets Manager** | `ray-llm-secret` | Key-value secret containing `LLM_API_KEY`. |
 | **IAM Role (EKS)** | `distributed-ai-eks-cluster-role` | Policy: `AmazonEKSClusterPolicy`. |
@@ -222,11 +222,11 @@ kubectl get pods -n monitoring
 ```bash
 aws glue get-table --database-name corporate_iceberg_db --name corporate_registry --region us-east-1
 ```
-*Expected Output:* `TableType: EXTERNAL_TABLE`, `Parameters.table_type: ICEBERG`, pointing to `s3://distributed-ai-lake-d14ec094/iceberg-warehouse/...`.
+*Expected Output:* `TableType: EXTERNAL_TABLE`, `Parameters.table_type: ICEBERG`, pointing to `s3://distributed-ai-lake-693880751318/iceberg-warehouse/...`.
 
 ### 3. Verify S3 Parquet & Metadata Files
 ```bash
-aws s3 ls s3://distributed-ai-lake-d14ec094/iceberg-warehouse/corporate_iceberg_db.db/corporate_registry/ --recursive
+aws s3 ls s3://distributed-ai-lake-693880751318/iceberg-warehouse/corporate_iceberg_db.db/corporate_registry/ --recursive
 ```
 *Expected Output:* Parquet data files under `data/` and Iceberg snapshot metadata (`.metadata.json`, `.avro`) under `metadata/`.
 
@@ -266,7 +266,7 @@ Run Bitbucket custom pipeline `2-terraform-destroy-infra` or execute:
 aws glue delete-table --database-name corporate_iceberg_db --name corporate_registry --region us-east-1 || true
 
 # 3. Empty S3 Bucket (all objects, versions, and delete markers)
-aws s3 rm s3://distributed-ai-lake-d14ec094 --recursive || true
+aws s3 rm s3://distributed-ai-lake-693880751318 --recursive || true
 
 # 4. Terraform destroy
 cd terraform/environments/prod
