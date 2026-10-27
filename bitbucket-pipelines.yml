@@ -241,6 +241,7 @@ pipelines:
           name: "Terraform Plan: Preview All AWS Infrastructure"
           image: hashicorp/terraform:1.9.4
           script:
+            - which aws >/dev/null 2>&1 || apk add --no-cache aws-cli
             - cd terraform/environments/prod
             - terraform init
             - export EKS_CLUSTER_NAME=${EKS_CLUSTER_NAME:-"distributed-ai-eks"}
@@ -257,6 +258,7 @@ pipelines:
           trigger: manual
           image: hashicorp/terraform:1.9.4
           script:
+            - which aws >/dev/null 2>&1 || apk add --no-cache aws-cli
             - cd terraform/environments/prod
             - terraform init
             - export EKS_CLUSTER_NAME=${EKS_CLUSTER_NAME:-"distributed-ai-eks"}
@@ -293,6 +295,7 @@ pipelines:
           name: "Terraform Apply: Deploy Full Platform Infrastructure"
           image: hashicorp/terraform:1.9.4
           script:
+            - which aws >/dev/null 2>&1 || apk add --no-cache aws-cli
             - cd terraform/environments/prod
             - terraform init
             - export EKS_CLUSTER_NAME=${EKS_CLUSTER_NAME:-"distributed-ai-eks"}
@@ -328,6 +331,7 @@ pipelines:
           name: "Terraform Plan Destroy: Preview Cloud Resources to Terminate"
           image: hashicorp/terraform:1.9.4
           script:
+            - which aws >/dev/null 2>&1 || apk add --no-cache aws-cli
             - cd terraform/environments/prod
             - terraform init
             - terraform plan -destroy
@@ -336,6 +340,7 @@ pipelines:
           trigger: manual
           image: hashicorp/terraform:1.9.4
           script:
+            - which aws >/dev/null 2>&1 || apk add --no-cache aws-cli
             - cd terraform/environments/prod
             - terraform init
             - terraform destroy -auto-approve
