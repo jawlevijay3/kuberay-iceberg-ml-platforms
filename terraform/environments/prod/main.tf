@@ -31,22 +31,28 @@ module "eks" {
   environment     = var.environment
 }
 
-# Configure Kubernetes and Helm providers
-data "aws_eks_cluster_auth" "cluster" {
-  name = module.eks.cluster_name
-}
-
+# Configure Kubernetes and Helm providers with dynamic exec authentication
+# JM Comment: Uses 'aws eks get-token' via exec block instead of static 'data.aws_eks_cluster_auth'.
+# This eliminates the 15-minute IAM token expiration bug when EKS cluster + node groups take >15m to provision.
 provider "kubernetes" {
   host                   = module.eks.cluster_endpoint
   cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
-  token                  = data.aws_eks_cluster_auth.cluster.token
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+    args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", var.aws_region]
+  }
 }
 
 provider "helm" {
   kubernetes {
     host                   = module.eks.cluster_endpoint
     cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
-    token                  = data.aws_eks_cluster_auth.cluster.token
+    exec {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      command     = "aws"
+      args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", var.aws_region]
+    }
   }
 }
 

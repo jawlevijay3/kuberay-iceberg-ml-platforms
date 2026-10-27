@@ -1,0 +1,46 @@
+# JM Comment: AWS Application Load Balancer (ALB) Ingress for Ray Dashboard, Grafana, and Prometheus UI
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ray-platform-alb-ingress
+  namespace: kuberay
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+    alb.ingress.kubernetes.io/healthcheck-path: /
+    alb.ingress.kubernetes.io/load-balancer-name: "ray-platform-alb"
+    alb.ingress.kubernetes.io/group.name: "ray-platform-group"
+spec:
+  rules:
+    - host: "ray.corporate-ai.internal"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: corporate-ai-cluster-head-svc
+                port:
+                  number: 8265
+    - host: "grafana.corporate-ai.internal"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: grafana
+                port:
+                  number: 3000
+    - host: "prometheus.corporate-ai.internal"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: prometheus
+                port:
+                  number: 9090

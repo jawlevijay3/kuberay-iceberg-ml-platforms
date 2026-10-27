@@ -116,6 +116,7 @@ definitions:
           - kubectl apply -f k8s/01-secrets.yaml
           - kubectl apply -f k8s/02-irsa-serviceaccount.yaml
           - kubectl apply -f k8s/06-gateway-api.yaml
+          - kubectl apply -f k8s/06-alb-ingress.yaml || true
           - echo "Applying Prometheus and Grafana Monitoring Stack..."
           - kubectl apply -f k8s/07-monitoring.yaml
           - echo "Prerequisites, Metrics Server, Prometheus & Grafana verified successfully."
@@ -157,6 +158,7 @@ definitions:
           - echo "Connecting to EKS Cluster $TARGET_CLUSTER in $AWS_REGION..."
           - aws eks update-kubeconfig --region $AWS_REGION --name $TARGET_CLUSTER || echo "Cluster may already be unreachable or removed"
           - echo "=== [Stage 1 - Deleting Gateway API, HTTPRoutes & Cloud LoadBalancers to release AWS ENIs] ==="
+          - kubectl delete ingress --all -A --ignore-not-found=true --timeout=30s || true
           - kubectl delete referencegrant --all -A --ignore-not-found=true --timeout=30s || true
           - kubectl delete httproute --all -A --ignore-not-found=true --timeout=30s || true
           - kubectl delete gateway --all -A --ignore-not-found=true --timeout=60s || true

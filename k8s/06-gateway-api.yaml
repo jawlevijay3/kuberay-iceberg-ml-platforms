@@ -1,3 +1,21 @@
+# JM Comment: EnvoyProxy Custom Resource to configure AWS Load Balancer for the Gateway API Proxy
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: ray-gateway-proxy-config
+  namespace: kuberay
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyService:
+        type: LoadBalancer
+        annotations:
+          service.beta.kubernetes.io/aws-load-balancer-type: "external"
+          service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+          service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "instance"
+          service.beta.kubernetes.io/aws-load-balancer-attributes: "load_balancing.cross_zone.enabled=true"
+---
 # JM Comment: Kubernetes Gateway API Specification for Ray, Grafana, and Prometheus Routing
 apiVersion: gateway.networking.k8s.io/v1
 kind: GatewayClass
@@ -5,9 +23,14 @@ metadata:
   name: ray-gateway-class
 spec:
   controllerName: gateway.envoyproxy.io/gatewayclass-controller
-  description: "Ray Cluster and Monitoring Gateway Routing"
+  description: "Ray Cluster and Monitoring Gateway Routing via AWS Application/Network Load Balancer"
+  parametersRef:
+    group: gateway.envoyproxy.io
+    kind: EnvoyProxy
+    name: ray-gateway-proxy-config
+    namespace: kuberay
 ---
-# JM Comment: Gateway resource exposing Ray, Grafana, and Prometheus with modern L7 routing
+# JM Comment: Gateway resource exposing Ray, Grafana, and Prometheus with modern L7 routing and AWS Load Balancer
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
@@ -15,6 +38,11 @@ metadata:
   namespace: kuberay
   annotations:
     gateway.networking.k8s.io/service-type: LoadBalancer
+    service.beta.kubernetes.io/aws-load-balancer-type: "external"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "instance"
+    service.beta.kubernetes.io/aws-load-balancer-attributes: "load_balancing.cross_zone.enabled=true"
+    alb.ingress.kubernetes.io/scheme: "internet-facing"
 spec:
   gatewayClassName: ray-gateway-class
   listeners:
