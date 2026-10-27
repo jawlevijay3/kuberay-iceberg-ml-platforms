@@ -253,10 +253,28 @@ def write_to_iceberg(records: List[Dict[str, Any]], table_name: str = "corporate
         from pyiceberg.catalog import load_catalog
         import pyarrow as pa
         
+        def safe_float(v, default=0.0) -> float:
+            if v is None:
+                return default
+            try:
+                cleaned = str(v).strip().rstrip("$").rstrip("s").rstrip("S").replace(",", "")
+                return float(cleaned)
+            except Exception:
+                return default
+
+        def safe_int(v, default=0) -> int:
+            if v is None:
+                return default
+            try:
+                cleaned = str(v).strip().rstrip("$").rstrip("s").rstrip("S").replace(",", "")
+                return int(float(cleaned))
+            except Exception:
+                return default
+
         table_rows = []
         for r in records:
-            rev_val = float(r.get("reported_revenue_usd", 0.0))
-            headcount_val = int(r.get("headcount", 0)) if "headcount" in r and r.get("headcount") else 0
+            rev_val = safe_float(r.get("reported_revenue_usd", 0.0))
+            headcount_val = safe_int(r.get("headcount", 0))
             table_rows.append({
                 "canonical_id": str(r.get("canonical_id", "")),
                 "corporate_name": str(r.get("corporate_name", "")),

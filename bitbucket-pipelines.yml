@@ -303,6 +303,21 @@ pipelines:
     # -------------------------------------------------------------------------
     3-full-end-to-end-deployment:
       - step:
+          name: "Terraform Plan: Preview All AWS Infrastructure"
+          image: hashicorp/terraform:1.9.4
+          script:
+            - cd terraform/environments/prod
+            - terraform init
+            - export EKS_CLUSTER_NAME=${EKS_CLUSTER_NAME:-"distributed-ai-eks"}
+            - echo "Syncing pre-existing EKS addons into Terraform state if present to avoid 409 Conflict..."
+            - terraform import module.eks_addons.aws_eks_addon.coredns ${EKS_CLUSTER_NAME}:coredns || true
+            - terraform import module.eks_addons.aws_eks_addon.aws_ebs_csi_driver ${EKS_CLUSTER_NAME}:aws-ebs-csi-driver || true
+            - terraform import module.eks_addons.aws_eks_addon.aws_secrets_store_csi_driver_provider ${EKS_CLUSTER_NAME}:aws-secrets-store-csi-driver-provider || true
+            - terraform import module.eks_addons.aws_eks_addon.metrics_server ${EKS_CLUSTER_NAME}:metrics-server || true
+            - terraform plan -out=tfplan
+          artifacts:
+            - terraform/environments/prod/tfplan
+      - step:
           name: "Terraform Apply: Deploy Full Platform Infrastructure"
           image: hashicorp/terraform:1.9.4
           script:
