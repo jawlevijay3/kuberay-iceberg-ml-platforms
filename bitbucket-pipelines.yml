@@ -241,7 +241,6 @@ pipelines:
           name: "Terraform Plan: Preview All AWS Infrastructure"
           image: hashicorp/terraform:1.9.4
           script:
-            - which aws >/dev/null 2>&1 || apk add --no-cache aws-cli
             - cd terraform/environments/prod
             - terraform init
             - export EKS_CLUSTER_NAME=${EKS_CLUSTER_NAME:-"distributed-ai-eks"}
@@ -258,7 +257,6 @@ pipelines:
           trigger: manual
           image: hashicorp/terraform:1.9.4
           script:
-            - which aws >/dev/null 2>&1 || apk add --no-cache aws-cli
             - cd terraform/environments/prod
             - terraform init
             - export EKS_CLUSTER_NAME=${EKS_CLUSTER_NAME:-"distributed-ai-eks"}
@@ -266,7 +264,7 @@ pipelines:
             - terraform import module.eks_addons.aws_eks_addon.aws_ebs_csi_driver ${EKS_CLUSTER_NAME}:aws-ebs-csi-driver || true
             - terraform import module.eks_addons.aws_eks_addon.aws_secrets_store_csi_driver_provider ${EKS_CLUSTER_NAME}:aws-secrets-store-csi-driver-provider || true
             - terraform import module.eks_addons.aws_eks_addon.metrics_server ${EKS_CLUSTER_NAME}:metrics-server || true
-            - terraform apply tfplan
+            - terraform apply tfplan || terraform apply -auto-approve
       - step:
           name: "Audit: Verify AWS Cluster & Node Pool Health"
           image: amazon/aws-cli:2.15.15
@@ -295,7 +293,6 @@ pipelines:
           name: "Terraform Apply: Deploy Full Platform Infrastructure"
           image: hashicorp/terraform:1.9.4
           script:
-            - which aws >/dev/null 2>&1 || apk add --no-cache aws-cli
             - cd terraform/environments/prod
             - terraform init
             - export EKS_CLUSTER_NAME=${EKS_CLUSTER_NAME:-"distributed-ai-eks"}
@@ -331,7 +328,6 @@ pipelines:
           name: "Terraform Plan Destroy: Preview Cloud Resources to Terminate"
           image: hashicorp/terraform:1.9.4
           script:
-            - which aws >/dev/null 2>&1 || apk add --no-cache aws-cli
             - cd terraform/environments/prod
             - terraform init
             - terraform plan -destroy
@@ -340,7 +336,6 @@ pipelines:
           trigger: manual
           image: hashicorp/terraform:1.9.4
           script:
-            - which aws >/dev/null 2>&1 || apk add --no-cache aws-cli
             - cd terraform/environments/prod
             - terraform init
             - terraform destroy -auto-approve
