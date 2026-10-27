@@ -20,10 +20,41 @@ spec:
   shutdownAfterJobFinishes: false
   ttlSecondsAfterFinished: 86400 # Retain pod logs for 24 hours for debugging
 
+  # JM Comment: Submitter pod runs python ray_pipeline.py and requires IRSA for AWS Glue & S3 permissions
+  submitterPodTemplate:
+    spec:
+      serviceAccountName: ray-head-sa
+      restartPolicy: Never
+      containers:
+        - name: ray-job-submitter
+          image: 693880751318.dkr.ecr.us-east-1.amazonaws.com/distributed-ai-ray:latest
+          env:
+            - name: AWS_DEFAULT_REGION
+              value: "us-east-1"
+            - name: AWS_REGION
+              value: "us-east-1"
+            - name: ICEBERG_CATALOG_TYPE
+              value: "glue"
+            - name: ICEBERG_S3_BUCKET
+              value: "distributed-ai-lake-693880751318"
+            - name: GLUE_DATABASE_NAME
+              value: "corporate_iceberg_db"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          resources:
+            requests:
+              cpu: "300m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "2Gi"
+
   runtimeEnvYAML: |
     env_vars:
+      AWS_DEFAULT_REGION: "us-east-1"
+      AWS_REGION: "us-east-1"
       ICEBERG_CATALOG_TYPE: "glue"
-      ICEBERG_S3_BUCKET: "distributed-ai-lake-d14ec094"
+      ICEBERG_S3_BUCKET: "distributed-ai-lake-693880751318"
       GLUE_DATABASE_NAME: "corporate_iceberg_db"
       PYTHONUNBUFFERED: "1"
 

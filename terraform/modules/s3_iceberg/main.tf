@@ -1,7 +1,5 @@
 # JM Comment: Storage and Iceberg Catalog Infrastructure
-resource "random_id" "suffix" {
-  byte_length = 4
-}
+data "aws_caller_identity" "current" {}
 
 # KMS Key for Zero-Trust encryption at rest
 resource "aws_kms_key" "storage_key" {
@@ -15,8 +13,9 @@ resource "aws_kms_key" "storage_key" {
 }
 
 # Primary S3 Data Bucket (Raw datasets, Iceberg warehouse files, Ray object spills)
+# JM Comment: Deterministic naming using AWS Account ID ensures zero configuration drift across runs
 resource "aws_s3_bucket" "data_lake" {
-  bucket        = "${var.bucket_name_prefix}-lake-${random_id.suffix.hex}"
+  bucket        = "${var.bucket_name_prefix}-lake-${data.aws_caller_identity.current.account_id}"
   force_destroy = true
 
   tags = {

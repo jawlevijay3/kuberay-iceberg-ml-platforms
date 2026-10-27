@@ -244,9 +244,10 @@ def write_to_iceberg(records: List[Dict[str, Any]], table_name: str = "corporate
     """
     logger.info(f"--- [Step 3: Iceberg Sink] Initializing transactional commit to table: {table_name} ---")
     
-    s3_bucket = os.getenv("ICEBERG_S3_BUCKET", "distributed-ai-lake-d14ec094")
+    s3_bucket = os.getenv("ICEBERG_S3_BUCKET", "distributed-ai-lake-693880751318")
     catalog_type = os.getenv("ICEBERG_CATALOG_TYPE", "glue")
     glue_db = os.getenv("GLUE_DATABASE_NAME", "corporate_iceberg_db")
+    aws_region = os.getenv("AWS_REGION", os.getenv("AWS_DEFAULT_REGION", "us-east-1"))
     
     try:
         from pyiceberg.catalog import load_catalog
@@ -271,15 +272,24 @@ def write_to_iceberg(records: List[Dict[str, Any]], table_name: str = "corporate
         logger.info(f"PyArrow table prepared with {len(arrow_table)} records.")
 
         if catalog_type == "glue":
-            logger.info(f"Connecting to AWS Glue Iceberg Catalog: s3://{s3_bucket}/iceberg-warehouse (db: {glue_db})")
+            logger.info(f"Connecting to AWS Glue Iceberg Catalog: s3://{s3_bucket}/iceberg-warehouse (db: {glue_db}, region: {aws_region})")
             catalog = load_catalog(
                 "prod_glue_catalog",
                 **{
                     "type": "glue",
                     "warehouse": f"s3://{s3_bucket}/iceberg-warehouse",
-                    "py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO",
+                    "s3.region": aws_region,
+                    "glue.region": aws_region,
+                    "client.region": aws_region,
+                    "py-io-impl": "pyiceberg.io.pyarrow.PyArrowFileIO",
                 }
             )
+            # Ensure database namespace exists in Glue catalog
+            try:
+                catalog.create_namespace(glue_db)
+                logger.info(f"Created Glue catalog database namespace: '{glue_db}'")
+            except Exception:
+                pass
             table_identifier = (glue_db, table_name)
         else:
             local_warehouse = warehouse_path or os.path.join(os.path.dirname(os.path.abspath(__file__)), "iceberg_warehouse")
@@ -298,13 +308,13 @@ def write_to_iceberg(records: List[Dict[str, Any]], table_name: str = "corporate
         try:
             table = catalog.load_table(table_identifier)
             logger.info(f"Loaded existing Iceberg table: {table_identifier}")
-        except Exception:
-            logger.info(f"Creating new Iceberg table '{table_identifier}' in warehouse...")
+        except Exception as load_err:
+            logger.info(f"Table {table_identifier} not found ({load_err}). Creating new Iceberg table in warehouse...")
             if catalog_type == "glue":
                 table = catalog.create_table(
                     identifier=table_identifier,
                     schema=arrow_table.schema,
-                    location=f"s3://{s3_bucket}/iceberg-warehouse/{glue_db}.db/{table_name}",
+                    location=f"s3://{s3_bucket}/iceberg-warehouse/{glue_db}/{table_name}",
                 )
             else:
                 table = catalog.create_table(
@@ -320,9 +330,10 @@ def write_to_iceberg(records: List[Dict[str, Any]], table_name: str = "corporate
         return True
 
     except Exception as e:
-        logger.warning(f"Iceberg Catalog note: {e}. Executing resilient transactional commit simulation.")
-        logger.info(f"Successfully processed {len(records)} records for Iceberg table '{table_name}'.")
-        return True
+        import traceback
+        logger.error(f"Error executing Iceberg Catalog commit: {e}")
+        traceback.print_exc()
+        raise e
 
 
 # -------------------------------------------------------------------------

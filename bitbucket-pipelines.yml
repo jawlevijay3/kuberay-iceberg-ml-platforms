@@ -136,6 +136,17 @@ definitions:
           - export TARGET_CLUSTER=${EXISTING_EKS_CLUSTER_NAME:-${EKS_CLUSTER_NAME:-"distributed-ai-eks"}}
           - export AWS_REGION=${AWS_DEFAULT_REGION:-"us-east-1"}
           - aws eks update-kubeconfig --region $AWS_REGION --name $TARGET_CLUSTER || echo "Local cluster mode"
+          - echo "=== [Storage & Catalog Audit] Validating S3 Bucket & Glue Database ==="
+          - |
+            DISCOVERED_BUCKET=$(aws s3api list-buckets --query "Buckets[?contains(Name, 'distributed-ai-lake')].Name | [0]" --output text 2>/dev/null || true)
+            TARGET_BUCKET=${DISCOVERED_BUCKET:-"distributed-ai-lake-693880751318"}
+            if [ -z "$DISCOVERED_BUCKET" ] || [ "$DISCOVERED_BUCKET" == "None" ]; then
+              TARGET_BUCKET="distributed-ai-lake-693880751318"
+            fi
+            echo "Target S3 Bucket for Iceberg Warehouse: $TARGET_BUCKET"
+            sed -i "s/distributed-ai-lake-[a-zA-Z0-9]*/$TARGET_BUCKET/g" k8s/03-raycluster.yaml k8s/04-rayjob.yaml
+            aws s3api head-bucket --bucket "$TARGET_BUCKET" 2>/dev/null || aws s3api create-bucket --bucket "$TARGET_BUCKET" --region $AWS_REGION || true
+            aws glue get-database --name corporate_iceberg_db --region $AWS_REGION 2>/dev/null || aws glue create-database --database-input '{"Name":"corporate_iceberg_db","Description":"Glue catalog database for Ray Iceberg"}' --region $AWS_REGION || true
           - echo "Deploying Production RayCluster (Head + Spot Workers + Bottlerocket Resolver)..."
           - kubectl apply -f k8s/03-raycluster.yaml
           - echo "Cleaning up any previously completed RayJob to ensure clean run..."

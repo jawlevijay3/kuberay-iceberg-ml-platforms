@@ -145,10 +145,14 @@ spec:
                 - mountPath: /tmp/ray
                   name: ray-spill-storage
               env:
+                - name: AWS_DEFAULT_REGION
+                  value: "us-east-1"
+                - name: AWS_REGION
+                  value: "us-east-1"
                 - name: ICEBERG_CATALOG_TYPE
                   value: "glue"
                 - name: ICEBERG_S3_BUCKET
-                  value: "distributed-ai-lake-d14ec094"
+                  value: "distributed-ai-lake-693880751318"
                 - name: GLUE_DATABASE_NAME
                   value: "corporate_iceberg_db"
           volumes:
@@ -213,8 +217,16 @@ spec:
                   name: secrets-store-inline
                   readOnly: true
               env:
+                - name: AWS_DEFAULT_REGION
+                  value: "us-east-1"
+                - name: AWS_REGION
+                  value: "us-east-1"
                 - name: ICEBERG_CATALOG_TYPE
                   value: "glue"
+                - name: ICEBERG_S3_BUCKET
+                  value: "distributed-ai-lake-693880751318"
+                - name: GLUE_DATABASE_NAME
+                  value: "corporate_iceberg_db"
           volumes:
             - name: dshm
               emptyDir:
