@@ -23,7 +23,7 @@ metadata:
   name: ray-gateway-class
 spec:
   controllerName: gateway.envoyproxy.io/gatewayclass-controller
-  description: "Ray Cluster and Monitoring Gateway Routing via AWS Application/Network Load Balancer"
+  description: "Ray and Observability Gateway"
   parametersRef:
     group: gateway.envoyproxy.io
     kind: EnvoyProxy

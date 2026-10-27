@@ -1,4 +1,4 @@
-# JM Comment: Namespace definition for KubeRay cluster and workloads
+# JM Comment: Namespace definitions for KubeRay cluster and Observability workloads
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -7,3 +7,13 @@ metadata:
     name: kuberay
     environment: prod
     app.kubernetes.io/managed-by: terraform
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    name: monitoring
+    environment: prod
+    app.kubernetes.io/name: monitoring
+    app.kubernetes.io/part-of: distributed-ai-platform
