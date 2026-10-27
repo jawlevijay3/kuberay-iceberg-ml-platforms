@@ -93,12 +93,6 @@ spec:
                 ports:
                   - containerPort: 44217
                     name: metrics
-                env:
-                  - name: LLM_API_KEY
-                    valueFrom:
-                      secretKeyRef:
-                        name: ray-llm-secret
-                        key: LLM_API_KEY
                 resources:
                   limits:
                     cpu: '1500m'
@@ -106,3 +100,15 @@ spec:
                   requests:
                     cpu: '800m'
                     memory: '3Gi'
+                volumeMounts:
+                  - mountPath: /mnt/secrets-store
+                    name: secrets-store-inline
+                    readOnly: true
+            volumes:
+              - name: secrets-store-inline
+                csi:
+                  driver: secrets-store.csi.k8s.io
+                  readOnly: true
+                  volumeAttributes:
+                    secretProviderClass: "ray-aws-secrets"
+

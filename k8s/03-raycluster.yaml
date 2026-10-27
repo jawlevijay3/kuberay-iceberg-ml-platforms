@@ -213,11 +213,6 @@ spec:
                   name: secrets-store-inline
                   readOnly: true
               env:
-                - name: LLM_API_KEY
-                  valueFrom:
-                    secretKeyRef:
-                      name: ray-llm-secret
-                      key: LLM_API_KEY
                 - name: ICEBERG_CATALOG_TYPE
                   value: "glue"
           volumes:

@@ -190,6 +190,7 @@ definitions:
           - kubectl delete -f k8s/03-raycluster.yaml --ignore-not-found=true --timeout=30s || true
           - kubectl delete -f k8s/02-irsa-serviceaccount.yaml --ignore-not-found=true --timeout=30s || true
           - kubectl delete -f k8s/01-secrets.yaml --ignore-not-found=true --timeout=30s || true
+          - kubectl delete secret ray-llm-secret -n kuberay --ignore-not-found=true || true
           - kubectl delete namespace kuberay --ignore-not-found=true --timeout=60s || true
           - echo "=== [Stage 5 - Cleaning up Glue Iceberg Catalog Tables] ==="
           - |
