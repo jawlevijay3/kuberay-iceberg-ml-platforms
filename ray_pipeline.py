@@ -413,10 +413,10 @@ def train_revenue_model(records: List[Dict[str, Any]]) -> Dict[str, Any]:
         rmse = float(np.sqrt(mean_squared_error(y_test, predictions)))
         r2 = float(r2_score(y_test, predictions))
         
-        # Persist checkpoint directly to S3 Data Lake
-        s3_bucket = os.getenv("ICEBERG_S3_BUCKET", "distributed-ai-lake-d14ec094")
+        # Persist checkpoint directly to S3 Model Registry Bucket
+        model_bucket = os.getenv("MODEL_S3_BUCKET", os.getenv("ICEBERG_S3_BUCKET", "distributed-ai-models-693880751318"))
         checkpoint_key = "model-checkpoints/revenue_model_latest.pkl"
-        checkpoint_uri = f"s3://{s3_bucket}/{checkpoint_key}"
+        checkpoint_uri = f"s3://{model_bucket}/{checkpoint_key}"
         try:
             import boto3
             import pickle
@@ -428,7 +428,7 @@ def train_revenue_model(records: List[Dict[str, Any]]) -> Dict[str, Any]:
                 "feature_names": ["headcount", "procurement_spend_usd", "supply_chain_risk_score", "operating_cost_usd", "ebitda_usd"],
                 "feature_coefficients": [round(float(c), 3) for c in model.coef_],
             })
-            s3.put_object(Bucket=s3_bucket, Key=checkpoint_key, Body=payload)
+            s3.put_object(Bucket=model_bucket, Key=checkpoint_key, Body=payload)
             logger.info(f"Model checkpoint successfully uploaded to: {checkpoint_uri}")
         except Exception as e:
             checkpoint_uri = f"Saved in-memory (S3 upload notice: {e})"

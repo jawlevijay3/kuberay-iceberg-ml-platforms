@@ -146,6 +146,7 @@ definitions:
             echo "Target S3 Bucket for Iceberg Warehouse: $TARGET_BUCKET"
             sed -i "s/distributed-ai-lake-[a-zA-Z0-9]*/$TARGET_BUCKET/g" k8s/03-raycluster.yaml k8s/04-rayjob.yaml
             aws s3api head-bucket --bucket "$TARGET_BUCKET" 2>/dev/null || aws s3api create-bucket --bucket "$TARGET_BUCKET" --region $AWS_REGION || true
+            aws s3api head-bucket --bucket "distributed-ai-models-693880751318" 2>/dev/null || aws s3api create-bucket --bucket "distributed-ai-models-693880751318" --region $AWS_REGION || true
             aws glue get-database --name corporate_iceberg_db --region $AWS_REGION 2>/dev/null || aws glue create-database --database-input '{"Name":"corporate_iceberg_db","Description":"Glue catalog database for Ray Iceberg"}' --region $AWS_REGION || true
           - export IMAGE_TAG="${BITBUCKET_COMMIT:0:8}"
           - |

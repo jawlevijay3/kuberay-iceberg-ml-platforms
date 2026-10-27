@@ -24,9 +24,31 @@ resource "aws_s3_bucket" "data_lake" {
   }
 }
 
+# Secondary S3 Bucket: Dedicated Model Registry for trained ML models and checkpoints
+resource "aws_s3_bucket" "model_store" {
+  bucket        = "${var.bucket_name_prefix}-models-${data.aws_caller_identity.current.account_id}"
+  force_destroy = true
+
+  tags = {
+    Name        = "${var.bucket_name_prefix}-models"
+    Environment = var.environment
+  }
+}
+
 # Enforce S3 Bucket Server-side encryption
 resource "aws_s3_bucket_server_side_encryption_configuration" "lake_encryption" {
   bucket = aws_s3_bucket.data_lake.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      kms_master_key_id = aws_kms_key.storage_key.arn
+      sse_algorithm     = "aws:kms"
+    }
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "model_encryption" {
+  bucket = aws_s3_bucket.model_store.id
 
   rule {
     apply_server_side_encryption_by_default {
@@ -46,9 +68,25 @@ resource "aws_s3_bucket_public_access_block" "block_public" {
   restrict_public_buckets = true
 }
 
+resource "aws_s3_bucket_public_access_block" "block_public_models" {
+  bucket = aws_s3_bucket.model_store.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
 # Bucket versioning for Iceberg transactional safety
 resource "aws_s3_bucket_versioning" "versioning" {
   bucket = aws_s3_bucket.data_lake.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_versioning" "model_versioning" {
+  bucket = aws_s3_bucket.model_store.id
   versioning_configuration {
     status = "Enabled"
   }

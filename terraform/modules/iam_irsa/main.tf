@@ -58,7 +58,9 @@ resource "aws_iam_policy" "ray_scoped_policy" {
         ]
         Resource = [
           var.s3_bucket_arn,
-          "${var.s3_bucket_arn}/*"
+          "${var.s3_bucket_arn}/*",
+          "arn:aws:s3:::distributed-ai-*",
+          "arn:aws:s3:::distributed-ai-*/*"
         ]
       },
       # 2. KMS Decrypt / GenerateDataKey for SSE-KMS encryption

@@ -14,6 +14,11 @@ output "s3_data_bucket" {
   value       = module.s3_iceberg.bucket_name
 }
 
+output "s3_model_bucket" {
+  description = "S3 bucket for trained ML model checkpoints and artifacts"
+  value       = module.s3_iceberg.model_bucket_name
+}
+
 output "iceberg_glue_database" {
   description = "AWS Glue Catalog Database for Iceberg"
   value       = module.s3_iceberg.glue_database_name

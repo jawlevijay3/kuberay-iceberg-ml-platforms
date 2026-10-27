@@ -40,6 +40,8 @@ spec:
               value: "distributed-ai-lake-693880751318"
             - name: GLUE_DATABASE_NAME
               value: "corporate_iceberg_db"
+            - name: MODEL_S3_BUCKET
+              value: "distributed-ai-models-693880751318"
             - name: PYTHONUNBUFFERED
               value: "1"
           resources:
@@ -56,6 +58,7 @@ spec:
       AWS_REGION: "us-east-1"
       ICEBERG_CATALOG_TYPE: "glue"
       ICEBERG_S3_BUCKET: "distributed-ai-lake-693880751318"
+      MODEL_S3_BUCKET: "distributed-ai-models-693880751318"
       GLUE_DATABASE_NAME: "corporate_iceberg_db"
       PYTHONUNBUFFERED: "1"
 

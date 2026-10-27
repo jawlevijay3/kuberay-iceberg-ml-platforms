@@ -155,6 +155,8 @@ spec:
                   value: "distributed-ai-lake-693880751318"
                 - name: GLUE_DATABASE_NAME
                   value: "corporate_iceberg_db"
+                - name: MODEL_S3_BUCKET
+                  value: "distributed-ai-models-693880751318"
           volumes:
             - name: dshm
               emptyDir:
