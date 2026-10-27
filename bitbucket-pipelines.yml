@@ -202,19 +202,27 @@ definitions:
             done
           - echo "=== [Stage 6 - Purging S3 Data Lake Bucket Objects & Versions] ==="
           - |
-            export TARGET_BUCKET=${ICEBERG_S3_BUCKET:-"distributed-ai-lake-d14ec094"}
-            echo "Purging all objects and versions in s3://$TARGET_BUCKET..."
-            aws s3 rm "s3://$TARGET_BUCKET" --recursive 2>/dev/null || true
-            aws s3api list-object-versions --bucket "$TARGET_BUCKET" --region $AWS_REGION --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' --output json > /tmp/versions.json 2>/dev/null || true
-            if [ -s /tmp/versions.json ] && [ "$(cat /tmp/versions.json)" != '{"Objects": null}' ]; then
-              aws s3api delete-objects --bucket "$TARGET_BUCKET" --delete file:///tmp/versions.json --region $AWS_REGION 2>/dev/null || true
-            fi
-            aws s3api list-object-versions --bucket "$TARGET_BUCKET" --region $AWS_REGION --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' --output json > /tmp/markers.json 2>/dev/null || true
-            if [ -s /tmp/markers.json ] && [ "$(cat /tmp/markers.json)" != '{"Objects": null}' ]; then
-              aws s3api delete-objects --bucket "$TARGET_BUCKET" --delete file:///tmp/markers.json --region $AWS_REGION 2>/dev/null || true
-            fi
-          - echo "Waiting 20 seconds for AWS Load Balancer Elastic Network Interfaces (ENIs) to cleanly detach..."
-          - sleep 20
+            BUCKETS=$(aws s3api list-buckets --query "Buckets[?starts_with(Name, 'distributed-ai-lake')].Name" --output text 2>/dev/null || true)
+            for TARGET_BUCKET in $BUCKETS; do
+              if [ -n "$TARGET_BUCKET" ] && [ "$TARGET_BUCKET" != "None" ]; then
+                echo "Purging all objects and versions in s3://$TARGET_BUCKET..."
+                aws s3 rm "s3://$TARGET_BUCKET" --recursive 2>/dev/null || true
+                aws s3api list-object-versions --bucket "$TARGET_BUCKET" --region $AWS_REGION --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' --output json > /tmp/versions.json 2>/dev/null || true
+                if [ -s /tmp/versions.json ] && [ "$(cat /tmp/versions.json)" != '{"Objects": null}' ]; then
+                  aws s3api delete-objects --bucket "$TARGET_BUCKET" --delete file:///tmp/versions.json --region $AWS_REGION 2>/dev/null || true
+                fi
+                aws s3api list-object-versions --bucket "$TARGET_BUCKET" --region $AWS_REGION --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' --output json > /tmp/markers.json 2>/dev/null || true
+                if [ -s /tmp/markers.json ] && [ "$(cat /tmp/markers.json)" != '{"Objects": null}' ]; then
+                  aws s3api delete-objects --bucket "$TARGET_BUCKET" --delete file:///tmp/markers.json --region $AWS_REGION 2>/dev/null || true
+                fi
+              fi
+            done
+          - echo "=== [Stage 7 - Cleaning Ephemeral CloudWatch Log Groups] ==="
+          - |
+            aws logs delete-log-group --log-group-name /aws/eks/distributed-ai-eks/workloads --region $AWS_REGION 2>/dev/null || true
+            aws logs delete-log-group --log-group-name /aws/eks/distributed-ai-eks/system --region $AWS_REGION 2>/dev/null || true
+          - echo "Waiting 25 seconds for AWS Load Balancer Elastic Network Interfaces (ENIs) to cleanly detach..."
+          - sleep 25
           - echo "Kubernetes in-cluster resources, Cloud LoadBalancers, Ray, Monitoring, and Data Lake staging cleaned up successfully."
 
 pipelines:

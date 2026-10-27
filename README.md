@@ -257,3 +257,44 @@ Configured in `bitbucket-pipelines.yml`:
    ```
 4. **Trigger Deployment in Bitbucket**:
    Go to Bitbucket -> Pipelines -> Run Pipeline -> Select `1-deploy-infrastructure` or `3-full-end-to-end-deployment`.
+
+---
+
+## 12. Guaranteed Clean Teardown & Resource Destruction
+
+To prevent unexpected AWS charges or orphaned cloud dependencies, the platform implements a **strict 7-stage segregated teardown**:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ STAGE 1: DRAIN KUBERNETES & CLOUD LOAD BALANCERS                            │
+│ • Deletes Gateway, HTTPRoutes, and ALB Ingress                              │
+│ • Deletes any Service of type LoadBalancer across all namespaces             │
+│ • Detaches and deletes Elastic Network Interfaces (ENIs) from VPC subnets   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ STAGE 2: OBSERVABILITY & LOGGING TEARDOWN                                   │
+│ • Deletes Prometheus, Grafana, and Fluent Bit DaemonSets                    │
+│ • Deletes monitoring namespace cleanly                                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ STAGE 3: RAY CLUSTERS & JOBS TEARDOWN                                       │
+│ • Deletes RayJob, RayCluster, Head pods, and Spot Worker pods              │
+│ • Strips finalizers if needed to prevent stuck terminating states           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ STAGE 4: GLUE CATALOG CLEANUP                                               │
+│ • Drops all dynamically created Apache Iceberg tables in corporate_iceberg_db│
+├─────────────────────────────────────────────────────────────────────────────┤
+│ STAGE 5: S3 DATA LAKE PURGE                                                 │
+│ • Discovers and purges all raw datasets, Iceberg data files, and versions   │
+│ • Cleans all S3 delete markers to allow clean Terraform bucket destruction  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ STAGE 6: CLOUDWATCH LOG GROUP REMOVAL                                       │
+│ • Deletes ephemeral workload and system log groups                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ STAGE 7: TERRAFORM INFRASTRUCTURE DESTROY                                   │
+│ • Runs 'terraform destroy -auto-approve' for EKS, Node Pools, KMS, and VPC  │
+│ • Automated audit confirms 0 orphaned VPCs or EKS clusters remain in AWS    │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Execution Options:
+- **Workloads Only (Cluster Reset)**: Run pipeline `4-teardown-workloads-only` to delete Ray pods, Load Balancers, and test data while keeping EKS and VPC intact.
+- **Full Infrastructure Teardown**: Run pipeline `5-destroy-infrastructure` to drain all resources and execute `terraform destroy` with a post-teardown deletion audit report.
