@@ -530,9 +530,11 @@ spec:
         - name: dashboards-default
           configMap:
             name: ray-default-dashboard
+            optional: true
         - name: dashboards-data
           configMap:
             name: ray-data-dashboard
+            optional: true
 ---
 apiVersion: v1
 kind: Service

@@ -8,13 +8,13 @@ This document contains quick-reference access URLs, Gateway API routes, local po
 
 **AWS ELB Base Hostname:**
 ```
-ad529736115b943669001553121ab1ca-1845380098.us-east-1.elb.amazonaws.com
+a23e844f9073f443aaac97b72e939d04-a7945c90c7ac79a3.elb.us-east-1.amazonaws.com
 ```
 
 ### Direct Browser Access (Default Fallback)
 | Service | URL | Protocol | Port | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| **Ray Dashboard (Default)** | [http://ad529736115b943669001553121ab1ca-1845380098.us-east-1.elb.amazonaws.com](http://ad529736115b943669001553121ab1ca-1845380098.us-east-1.elb.amazonaws.com) | HTTP | `80` | Direct access routes to Ray Dashboard |
+| **Ray Dashboard (Default)** | [http://a23e844f9073f443aaac97b72e939d04-a7945c90c7ac79a3.elb.us-east-1.amazonaws.com](http://a23e844f9073f443aaac97b72e939d04-a7945c90c7ac79a3.elb.us-east-1.amazonaws.com) | HTTP | `80` | Direct access routes to Ray Dashboard |
 
 ---
 
@@ -35,21 +35,21 @@ To browse via domain names on your workstation, add these entries to your local 
 
 ```text
 # Distributed AI Platform Endpoints
-ad529736115b943669001553121ab1ca-1845380098.us-east-1.elb.amazonaws.com ray.corporate-ai.internal
-ad529736115b943669001553121ab1ca-1845380098.us-east-1.elb.amazonaws.com grafana.corporate-ai.internal
-ad529736115b943669001553121ab1ca-1845380098.us-east-1.elb.amazonaws.com prometheus.corporate-ai.internal
+a23e844f9073f443aaac97b72e939d04-a7945c90c7ac79a3.elb.us-east-1.amazonaws.com ray.corporate-ai.internal
+a23e844f9073f443aaac97b72e939d04-a7945c90c7ac79a3.elb.us-east-1.amazonaws.com grafana.corporate-ai.internal
+a23e844f9073f443aaac97b72e939d04-a7945c90c7ac79a3.elb.us-east-1.amazonaws.com prometheus.corporate-ai.internal
 ```
 
 ### Quick Verification via `curl`
 ```bash
 # Verify Ray Dashboard
-curl -I -H "Host: ray.corporate-ai.internal" http://ad529736115b943669001553121ab1ca-1845380098.us-east-1.elb.amazonaws.com
+curl -I -H "Host: ray.corporate-ai.internal" http://a23e844f9073f443aaac97b72e939d04-a7945c90c7ac79a3.elb.us-east-1.amazonaws.com
 
 # Verify Grafana
-curl -I -H "Host: grafana.corporate-ai.internal" http://ad529736115b943669001553121ab1ca-1845380098.us-east-1.elb.amazonaws.com
+curl -I -H "Host: grafana.corporate-ai.internal" http://a23e844f9073f443aaac97b72e939d04-a7945c90c7ac79a3.elb.us-east-1.amazonaws.com
 
 # Verify Prometheus
-curl -I -H "Host: prometheus.corporate-ai.internal" http://ad529736115b943669001553121ab1ca-1845380098.us-east-1.elb.amazonaws.com
+curl -I -H "Host: prometheus.corporate-ai.internal" http://a23e844f9073f443aaac97b72e939d04-a7945c90c7ac79a3.elb.us-east-1.amazonaws.com
 ```
 
 ---
