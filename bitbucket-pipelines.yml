@@ -281,6 +281,7 @@ pipelines:
             - terraform import module.eks_addons.aws_eks_addon.aws_ebs_csi_driver ${EKS_CLUSTER_NAME}:aws-ebs-csi-driver || true
             - terraform import module.eks_addons.aws_eks_addon.aws_secrets_store_csi_driver_provider ${EKS_CLUSTER_NAME}:aws-secrets-store-csi-driver-provider || true
             - terraform import module.eks_addons.aws_eks_addon.metrics_server ${EKS_CLUSTER_NAME}:metrics-server || true
+            - terraform import module.s3_iceberg.aws_s3_bucket.model_store distributed-ai-models-693880751318 || true
             - terraform plan -out=tfplan
           artifacts:
             - terraform/environments/prod/tfplan
@@ -296,6 +297,7 @@ pipelines:
             - terraform import module.eks_addons.aws_eks_addon.aws_ebs_csi_driver ${EKS_CLUSTER_NAME}:aws-ebs-csi-driver || true
             - terraform import module.eks_addons.aws_eks_addon.aws_secrets_store_csi_driver_provider ${EKS_CLUSTER_NAME}:aws-secrets-store-csi-driver-provider || true
             - terraform import module.eks_addons.aws_eks_addon.metrics_server ${EKS_CLUSTER_NAME}:metrics-server || true
+            - terraform import module.s3_iceberg.aws_s3_bucket.model_store distributed-ai-models-693880751318 || true
             - terraform apply tfplan || terraform apply -auto-approve
       - step:
           name: "Audit: Verify AWS Cluster & Node Pool Health"
@@ -333,6 +335,7 @@ pipelines:
             - terraform import module.eks_addons.aws_eks_addon.aws_ebs_csi_driver ${EKS_CLUSTER_NAME}:aws-ebs-csi-driver || true
             - terraform import module.eks_addons.aws_eks_addon.aws_secrets_store_csi_driver_provider ${EKS_CLUSTER_NAME}:aws-secrets-store-csi-driver-provider || true
             - terraform import module.eks_addons.aws_eks_addon.metrics_server ${EKS_CLUSTER_NAME}:metrics-server || true
+            - terraform import module.s3_iceberg.aws_s3_bucket.model_store distributed-ai-models-693880751318 || true
             - terraform plan -out=tfplan
           artifacts:
             - terraform/environments/prod/tfplan
@@ -347,6 +350,7 @@ pipelines:
             - terraform import module.eks_addons.aws_eks_addon.aws_ebs_csi_driver ${EKS_CLUSTER_NAME}:aws-ebs-csi-driver || true
             - terraform import module.eks_addons.aws_eks_addon.aws_secrets_store_csi_driver_provider ${EKS_CLUSTER_NAME}:aws-secrets-store-csi-driver-provider || true
             - terraform import module.eks_addons.aws_eks_addon.metrics_server ${EKS_CLUSTER_NAME}:metrics-server || true
+            - terraform import module.s3_iceberg.aws_s3_bucket.model_store distributed-ai-models-693880751318 || true
             - terraform apply -auto-approve
       - step:
           name: "Verify Infrastructure Status"
