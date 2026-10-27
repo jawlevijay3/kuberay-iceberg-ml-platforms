@@ -116,7 +116,6 @@ definitions:
           - kubectl apply -f k8s/01-secrets.yaml
           - kubectl apply -f k8s/02-irsa-serviceaccount.yaml
           - kubectl apply -f k8s/06-gateway-api.yaml
-          - kubectl apply -f k8s/06-alb-ingress.yaml || true
           - echo "Applying Prometheus and Grafana Monitoring Stack..."
           - kubectl create configmap ray-default-dashboard --from-file=default_grafana_dashboard.json=k8s/default_grafana_dashboard.json -n monitoring --dry-run=client -o yaml | kubectl apply -f - || true
           - kubectl create configmap ray-data-dashboard --from-file=data_grafana_dashboard.json=k8s/data_grafana_dashboard.json -n monitoring --dry-run=client -o yaml | kubectl apply -f - || true
