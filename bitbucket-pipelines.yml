@@ -165,6 +165,16 @@ definitions:
           - kubectl apply -f k8s/04-rayjob.yaml
           - echo "RayJob submitted successfully."
           - kubectl get rayjob -n kuberay || true
+          - echo "=== [RayJob Real-time Execution & Log Streaming] ==="
+          - sleep 12
+          - kubectl wait --for=condition=Ready pod -l job-type=corporate-harmonization -n kuberay --timeout=90s || true
+          - kubectl logs -f -l job-type=corporate-harmonization -n kuberay --tail=150 || kubectl logs -l app.kubernetes.io/name=rayjob -n kuberay --tail=150 || true
+          - echo "=== [Post-Execution Verification Audit] ==="
+          - echo "1. Checking AWS Glue Iceberg table corporate_registry..."
+          - aws glue get-table --database-name corporate_iceberg_db --name corporate_registry --region $AWS_REGION || true
+          - echo "2. Checking Model Checkpoint in S3 Bucket distributed-ai-models-693880751318..."
+          - aws s3 ls s3://distributed-ai-models-693880751318/ || true
+          - echo "Ray pipeline execution and verification audit complete."
 
     # -------------------------------------------------------------------------
     # Clean Teardown of All Kubernetes Workloads & Cloud LoadBalancers
