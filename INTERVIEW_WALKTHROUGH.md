@@ -82,7 +82,7 @@ Here is the exact lifecycle of the system from code commit to final execution:
 | **8. EntityResolver Actor** | `ray_pipeline.py::EntityResolver` | **Stateful LLM Service**. Stateful Ray Actor pinned to specialized worker nodes via `resources={"actor_node": 1}`. Normalizes corporate entity variations into canonical IDs. |
 | **9. Machine Learning Model** | `ray_pipeline.py::train_revenue_model` | **Revenue Prediction**. Trains regression model on combined supply chain and financial metrics, evaluating R² and RMSE. |
 | **10. Apache Iceberg** | `ray_pipeline.py::write_to_iceberg` | **Lakehouse Storage**. Writes harmonized corporate registry data with ACID transactions, snapshot isolation, and metadata tracking in AWS Glue. |
-| **11. Prometheus & Ingress** | `k8s/05-*, k8s/06-*` | **Observability**. Scrapes Ray metrics on port 44217, generates alerts on memory pressure, and exposes Ray Dashboard securely via ALB with OAuth authentication. |
+| **11. Gateway API & Observability** | `k8s/06-*, k8s/07-*` | **Ingress & Metrics**. Envoy Gateway (`GatewayClass`, `Gateway`, `HTTPRoute`) routing external HTTP traffic to Ray Dashboard port 8265, Prometheus scraping Ray metrics on port 44217, and Grafana visualizing dashboards. |
 | **12. Fluent Bit** | `k8s/07-fluentbit-logging.yaml` | **Centralized Logging**. DaemonSet capturing stdout/stderr across all Ray pods and streaming to CloudWatch Logs. |
 
 ---
@@ -174,7 +174,7 @@ We implemented **two-tier scheduling** using Kubernetes constraints and Ray cust
 > 2. On Merge to `main`: Only after passing all tests does it build the Docker image, tag it with the commit SHA, and trigger the `RayJob` CRD on Kubernetes.
 
 ### Q4: How do you access the Ray Dashboard in a private corporate environment?
-> **Answer:** For production users, we expose port 8265 via an AWS Application Load Balancer Ingress (`k8s/06-ray-dashboard-ingress.yaml`) with Cognito/Okta OIDC authentication so only authorized data scientists can view the dashboard. For internal platform engineers performing local triage, we use secure Kubernetes port-forwarding:
+> **Answer:** For external users and data scientists, we expose port 8265 using the modern **Kubernetes Gateway API** (`k8s/06-gateway-api.yaml`) via Envoy Gateway on an internet-facing NLB with path and host routing. For platform engineers performing local triage, we use secure Kubernetes port-forwarding:
 > `kubectl port-forward svc/corporate-ai-cluster-head-svc 8265:8265 -n kuberay`.
 
 ---

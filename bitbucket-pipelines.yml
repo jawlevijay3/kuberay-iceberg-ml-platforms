@@ -177,7 +177,7 @@ definitions:
           - echo "1. Checking AWS Glue Iceberg table corporate_registry..."
           - aws glue get-table --database-name corporate_iceberg_db --name corporate_registry --region $AWS_REGION || true
           - echo "2. Checking Model Checkpoint in S3 Bucket distributed-ai-models-693880751318..."
-          - aws s3 ls s3://distributed-ai-models-693880751318/ || true
+          - aws s3 ls s3://distributed-ai-models-693880751318/ --recursive || true
           - echo "Ray pipeline execution and verification audit complete."
 
     # -------------------------------------------------------------------------
@@ -236,9 +236,9 @@ definitions:
                 aws glue delete-table --database-name corporate_iceberg_db --name "$tbl" --region $AWS_REGION || true
               fi
             done
-          - echo "=== [Stage 6 - Purging S3 Data Lake Bucket Objects & Versions] ==="
+          - echo "=== [Stage 6 - Purging S3 Data Lake & Model Store Objects & Versions] ==="
           - |
-            BUCKETS=$(aws s3api list-buckets --query "Buckets[?starts_with(Name, 'distributed-ai-lake')].Name" --output text 2>/dev/null || true)
+            BUCKETS=$(aws s3api list-buckets --query "Buckets[?starts_with(Name, 'distributed-ai-')].Name" --output text 2>/dev/null || true)
             for TARGET_BUCKET in $BUCKETS; do
               if [ -n "$TARGET_BUCKET" ] && [ "$TARGET_BUCKET" != "None" ]; then
                 echo "Purging all objects and versions in s3://$TARGET_BUCKET..."
