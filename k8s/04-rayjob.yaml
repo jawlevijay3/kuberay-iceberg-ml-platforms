@@ -28,6 +28,7 @@ spec:
       containers:
         - name: ray-job-submitter
           image: 693880751318.dkr.ecr.us-east-1.amazonaws.com/distributed-ai-ray:latest
+          imagePullPolicy: Always
           env:
             - name: AWS_DEFAULT_REGION
               value: "us-east-1"

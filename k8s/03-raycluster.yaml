@@ -35,7 +35,7 @@ spec:
         containers:
           - name: ray-head
             image: 693880751318.dkr.ecr.us-east-1.amazonaws.com/distributed-ai-ray:latest
-            imagePullPolicy: IfNotPresent
+            imagePullPolicy: Always
             resources:
               limits:
                 cpu: '1500m'
@@ -124,7 +124,7 @@ spec:
           containers:
             - name: ray-worker
               image: 693880751318.dkr.ecr.us-east-1.amazonaws.com/distributed-ai-ray:latest
-              imagePullPolicy: IfNotPresent
+              imagePullPolicy: Always
               lifecycle:
                 preStop:
                   exec:
@@ -195,7 +195,7 @@ spec:
           containers:
             - name: ray-resolver-worker
               image: 693880751318.dkr.ecr.us-east-1.amazonaws.com/distributed-ai-ray:latest
-              imagePullPolicy: IfNotPresent
+              imagePullPolicy: Always
               lifecycle:
                 preStop:
                   exec:
